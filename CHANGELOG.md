@@ -1,0 +1,25 @@
+# Changelog
+
+Los cambios relevantes del proyecto se documentan aquí conforme a [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
+
+## [Unreleased]
+
+## [0.5.0]
+
+Primera versión preparada para publicación; fecha de publicación pendiente.
+
+### Added
+
+- Digital Twin jerárquico con relaciones de hosting y dependencias.
+- NEXUS CORE y Service Map con filtros, selección y expansión de ramas.
+- Discovery Engine con combinación de nodos, dependencias y eliminaciones.
+- Operational Health Engine con NEXUS HEALTH, criticidad y Operational Score.
+- Impact Propagation y análisis de causas raíz en el Inspector.
+- Mission Console y Timeline operacional agrupado por categorías.
+- Adaptador Docker con transporte HTTP normalizado y fallback simulado.
+- Laboratory Grid con ACA001, ING101, ING201, ING202, ING203 e ING204.
+
+### Limitations
+
+- La aplicación es frontend; KPI, eventos y topología inicial son simulados y se mantienen en memoria.
+- El endpoint Docker y la autenticación no están incluidos. Las demás integraciones registradas son placeholders.
