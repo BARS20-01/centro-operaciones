@@ -313,6 +313,8 @@ npm run start:api
 
 ## Deployment en Coolify — VPS-WEB
 
+Para el procedimiento paso a paso, configuración de servicios y checklist de aceptación, consulta la [guía de despliegue en Coolify](docs/deployment-coolify.md).
+
 El despliegue de producción recomendado es un solo recurso **Docker Compose** en Coolify que crea tres servicios separados:
 
 ```text
