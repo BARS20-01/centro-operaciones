@@ -41,6 +41,12 @@ export const dockerCommand: DockerCommand = async (args) => {
   return stdout
 }
 
+export async function dockerServerVersion(run: DockerCommand = dockerCommand): Promise<string> {
+  const version = (await run(['version', '--format', '{{.Server.Version}}'])).trim()
+  if (!version) throw new Error('Docker Engine version unavailable')
+  return version
+}
+
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Docker JSON object')
   return value as Record<string, unknown>

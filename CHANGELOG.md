@@ -4,10 +4,23 @@ Los cambios relevantes del proyecto se documentan aquí conforme a [Keep a Chang
 
 ## [Unreleased]
 
+Sin cambios registrados.
+
+## [0.6.1-alpha] - 2026-11-09
+
 ### Added
 
-- API Express que recopila contenedores y métricas mediante la CLI de Docker.
+- System Diagnostics para consultar API, versión Docker, contenedores encontrados, última detección y estado de descubrimiento.
+- API Express para Docker LIVE, endpoints de diagnóstico y healthcheck HTTP.
 - Indicador de procedencia Docker y pruebas de la API; se mantiene el fallback simulado.
+- Healthchecks de frontend, API y Docker Socket Proxy en Compose, y política explícita de solo lectura.
+- Checklists de Release Candidate y validación de despliegue en VPS-WEB/Coolify.
+
+### Changed
+
+- Sincronizada la versión del proyecto en `VERSION`, `package.json` y `package-lock.json`.
+- Fijada por digest la imagen predeterminada de Docker Socket Proxy y explicitados permisos mínimos de solo lectura.
+- Actualizada la documentación para indicar que la validación real en VPS-WEB sigue pendiente.
 
 ## [0.5.0]
 

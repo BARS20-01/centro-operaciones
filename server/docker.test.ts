@@ -8,6 +8,8 @@ const id = 'a'.repeat(64)
 const stoppedId = 'b'.repeat(64)
 const fixture: DockerCommand = async (args) => {
   switch (args[0]) {
+    case 'version':
+      return '28.0.0\n'
     case 'ps':
       return [
         JSON.stringify({ ID: id, Names: 'grafana', Image: 'grafana/grafana:latest', State: 'running' }),
@@ -76,6 +78,36 @@ test('rejects missing metrics instead of reporting a false healthy reading', asy
   await assert.rejects(listContainers(async (args) => args[0] === 'stats' ? '' : fixture(args)), /Missing Docker stats/)
 })
 
+test('health and diagnostics endpoints report API and Docker Engine information', async () => {
+  const server = createApp(fixture).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== 'string')
+    const health = await fetch(`http://127.0.0.1:${address.port}/api/health`)
+    assert.equal(health.status, 200)
+    assert.deepEqual(await health.json(), { status: 'OK' })
+    const diagnostics = await fetch(`http://127.0.0.1:${address.port}/api/diagnostics`)
+    assert.equal(diagnostics.status, 200)
+    assert.equal(diagnostics.headers.get('cache-control'), 'no-store')
+    const payload = await diagnostics.json() as {
+      checkedAt: string
+      dockerVersion: string | null
+      containersFound: number | null
+      lastDiscovery: string | null
+      discoveryStatus: string
+    }
+    assert.ok(Number.isFinite(Date.parse(payload.checkedAt)))
+    assert.equal(payload.dockerVersion, '28.0.0')
+    assert.equal(payload.containersFound, 2)
+    assert.ok(payload.lastDiscovery && Number.isFinite(Date.parse(payload.lastDiscovery)))
+    assert.equal(payload.discoveryStatus, 'OK')
+  } finally {
+    server.close()
+    await once(server, 'close')
+  }
+})
+
 test('container and stats endpoints return normalized data and 503 on Docker failure', async () => {
   const run: DockerCommand = async (args) => {
     if (args[0] === 'ps' && fail) throw new Error('Docker unavailable')
@@ -105,6 +137,12 @@ test('container and stats endpoints return normalized data and 503 on Docker fai
     const failed = await fetch(url)
     assert.equal(failed.status, 503)
     assert.deepEqual(await failed.json(), { error: 'Docker telemetry unavailable' })
+    const diagnostics = await fetch(`http://127.0.0.1:${address.port}/api/diagnostics`)
+    const diagnosticBody = await diagnostics.json() as { dockerVersion: string | null; containersFound: number | null; discoveryStatus: string }
+    assert.equal(diagnostics.status, 200)
+    assert.equal(diagnosticBody.dockerVersion, '28.0.0')
+    assert.equal(diagnosticBody.containersFound, null)
+    assert.equal(diagnosticBody.discoveryStatus, 'ERROR')
     const unknown = await fetch(`http://127.0.0.1:${address.port}/api/docker/exec`)
     assert.equal(unknown.status, 404)
   } finally {

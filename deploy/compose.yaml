@@ -1,3 +1,5 @@
+# Coolify Git: Base Directory=/deploy, Docker Compose Location=/compose.yaml.
+# Each context is the repository root, not the frontend or backend directory.
 services:
   nexus-prime-web:
     build:
@@ -9,10 +11,17 @@ services:
     expose:
       - "80"
     depends_on:
-      - nexus-prime-api
+      nexus-prime-api:
+        condition: service_healthy
     networks:
       - web-api
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   nexus-prime-api:
     build:
@@ -31,34 +40,64 @@ services:
       - web-api
       - api-docker
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   nexus-prime-docker-proxy:
-    image: ${DOCKER_SOCKET_PROXY_IMAGE:?Set DOCKER_SOCKET_PROXY_IMAGE to an approved pinned image or digest}
+    image: ${DOCKER_SOCKET_PROXY_IMAGE:-ghcr.io/tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459}
     environment:
       CONTAINERS: "1"
+      VERSION: "1"
+      PING: "1"
       POST: "0"
       AUTH: "0"
       BUILD: "0"
       COMMIT: "0"
       CONFIGS: "0"
       DISTRIBUTION: "0"
+      EVENTS: "0"
       EXEC: "0"
+      GRPC: "0"
       IMAGES: "0"
       INFO: "0"
       NETWORKS: "0"
       NODES: "0"
       PLUGINS: "0"
       SERVICES: "0"
+      SECRETS: "0"
       SESSION: "0"
       SWARM: "0"
       SYSTEM: "0"
       TASKS: "0"
       VOLUMES: "0"
+      ALLOW_START: "0"
+      ALLOW_STOP: "0"
+      ALLOW_RESTARTS: "0"
+      ALLOW_PAUSE: "0"
+      ALLOW_UNPAUSE: "0"
     volumes:
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro
     networks:
       - api-docker
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2375/_ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 networks:
   web-api:

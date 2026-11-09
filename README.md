@@ -3,7 +3,7 @@
 **Engineering Operations Nexus**  
 Digital Twin Platform para visualizar infraestructura, servicios, aplicaciones y laboratorios desde un Command Center.
 
-> **Estado actual: backend Docker LIVE preparado para v0.6.0; despliegue y validación en VPS pendientes.** La API Express consulta Docker mediante una CLI conectada a un Docker Socket Proxy de solo lectura; si la API no está disponible, el adaptador usa datos simulados. El grafo inicial, los KPI generales, los incidentes y la línea de tiempo siguen siendo simulados. La API no implementa autenticación propia. Los indicadores no sustituyen herramientas de monitorización de producción.
+> **Release candidate actual: v0.6.1-alpha.** Build, lint y pruebas locales pasan; el despliegue y Docker LIVE todavía requieren validación en VPS-WEB. La API Express consulta Docker mediante una CLI conectada a un Docker Socket Proxy con permisos de solo lectura; si la API no está disponible, el adaptador usa datos simulados. El grafo inicial, los KPI generales, los incidentes y la línea de tiempo siguen siendo simulados. La API no implementa autenticación propia. Los indicadores no sustituyen herramientas de monitorización de producción.
 
 ## Visión
 
@@ -334,7 +334,9 @@ nexus-prime-docker-proxy
 /var/run/docker.sock
 ```
 
-`deploy/compose.yaml` declara web, API, proxy Docker y redes separadas. Coolify debe crear el recurso usando ese archivo con la raíz del repositorio como contexto. Configura el dominio HTTPS únicamente en el servicio `nexus-prime-web`, apuntando al puerto interno `80`. No asignes dominio, puerto público ni acceso externo a `nexus-prime-api` o al socket proxy. Nginx sirve `dist/`, resuelve rutas SPA y reenvía `/api/` por la red privada al backend. La API no se expone al navegador directamente.
+`deploy/compose.yaml` declara web, API, proxy Docker y redes separadas. Crea una **aplicación Compose desde Git** en Coolify con **Base Directory `/deploy`** y **Docker Compose Location `/compose.yaml`**: así `context: ..` apunta a la raíz del checkout. No pegues este archivo en Docker Compose Empty esperando que Coolify clone el código. Consulta la [guía](docs/deployment-coolify.md#diagnóstico-del-error-de-rutas) para diagnosticar el error de rutas y comparar alternativas. Configura el dominio HTTPS únicamente en `nexus-prime-web`, puerto interno `80`; no publiques API ni socket proxy. Nginx sirve `dist/`, resuelve rutas SPA y reenvía `/api/` por la red privada al backend.
+
+La ruta `/diagnostics` presenta el estado de API, Docker Proxy, Docker Engine y descubrimiento, e identifica el modo `LIVE` o `SIMULATED`. No sustituye una comprobación contra el VPS-WEB; la guía de despliegue documenta límites y criterios de aceptación.
 
 ### Build y start
 
@@ -358,7 +360,7 @@ Define las variables en el recurso Compose de Coolify. `VITE_*` se usan como bui
 
 | Variable | Servicio | Valor recomendado / propósito |
 |---|---|---|
-| `DOCKER_SOCKET_PROXY_IMAGE` | socket proxy | Obligatoria. Imagen revisada y fijada por versión/digest, por ejemplo `ghcr.io/tecnativa/docker-socket-proxy@sha256:<digest-aprobado>`. No usar una etiqueta mutable en producción. |
+| `DOCKER_SOCKET_PROXY_IMAGE` | socket proxy | Opcional. El Compose usa por defecto `ghcr.io/tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459` (release v0.5.0). Si se sobrescribe, fijar un digest SHA-256 aprobado; no usar `latest`. |
 | `DOCKER_SOCKET_PATH` | socket proxy | `/var/run/docker.sock` por defecto; ruta del socket en el host Docker de Coolify. |
 | `VITE_DOCKER_API_URL` | web (build) | `/api/docker/containers` por defecto, mismo origen HTTPS. |
 | `VITE_DOCKER_STATS_URL` | web (build) | `/api/docker/stats` por defecto, mismo origen HTTPS. |
@@ -371,7 +373,7 @@ Define las variables en el recurso Compose de Coolify. `VITE_*` se usan como bui
 
 La API usa la CLI Docker, pero **no monta `/var/run/docker.sock`**. Solo `nexus-prime-docker-proxy` recibe ese bind mount. El proxy se conecta al socket y la API habla con él por la red `api-docker`, marcada `internal`. El servicio web no pertenece a esa red; por tanto, no tiene ruta al proxy Docker. El socket/proxy no debe recibir una ruta de ingress o un puerto publicado.
 
-El Compose habilita la sección `CONTAINERS=1`, necesaria para listar, inspeccionar y leer estadísticas; `POST=0` mantiene la API del Engine en solo lectura y las demás secciones sensibles se deshabilitan explícitamente. Las etiquetas Compose pueden declarar dependencias, pero NEXUS PRIME no debe inferir dependencias de aplicación si Docker no las reporta.
+El Compose habilita `CONTAINERS=1` para listar, inspeccionar y leer estadísticas; permite `VERSION=1` y `PING=1` para la versión y comprobación de conexión. `POST=0` limita las peticiones a GET/HEAD y los permisos de inicio, parada, reinicio y pausa están negados explícitamente. Las etiquetas Compose pueden declarar dependencias, pero NEXUS PRIME no debe inferir dependencias de aplicación si Docker no las reporta.
 
 El socket sigue siendo una interfaz de privilegio elevado, aunque solo se monte en el proxy. Revisa y fija una versión/digest del proxy, limita sus redes y permisos al mínimo, y no agregues `privileged` salvo que el host requiera explícitamente ese ajuste por SELinux/AppArmor. La API de NEXUS PRIME no tiene autenticación propia; restringe el acceso al dashboard/API con la política de identidad/autenticación del ingress de Coolify cuando corresponda. Nunca publiques `2375`, el socket Unix ni el puerto `3001` a Internet.
 
@@ -379,9 +381,9 @@ El socket sigue siendo una interfaz de privilegio elevado, aunque solo se monte 
 
 1. Confirma en VPS-WEB que Coolify puede acceder al socket Docker del host y que la ruta corresponde al daemon que aloja los contenedores objetivo.
 2. Selecciona un digest revisado de Docker Socket Proxy y define `DOCKER_SOCKET_PROXY_IMAGE` y, si es necesario, `DOCKER_SOCKET_PATH`.
-3. Crea en Coolify el recurso Compose con `deploy/compose.yaml` y la raíz del repositorio como contexto. Construye y levanta los tres servicios.
+3. Crea en Coolify la aplicación Compose desde Git con Base Directory `/deploy` y Docker Compose Location `/compose.yaml`; comprueba que el contexto efectivo sea la raíz del checkout. Construye web y API, descarga la imagen del proxy y levanta los tres servicios.
 4. Asigna el dominio TLS solamente a `nexus-prime-web` en el puerto `80`; no publiques los otros servicios.
-5. Comprueba los logs del backend y consulta desde un entorno autorizado `GET /api/docker/containers` y `GET /api/docker/stats` por el dominio web. Verifica los datos de contenedores esperados y que el dashboard indique `Docker: LIVE`.
+5. Comprueba los healthchecks y logs; consulta desde un entorno autorizado `/api/health`, `/api/diagnostics`, `GET /api/docker/containers` y `GET /api/docker/stats` por el dominio web. Verifica los datos de contenedores esperados y que Diagnostics y el dashboard indiquen fuente `LIVE`.
 6. Si la API responde `503`, confirma primero conectividad API→proxy, el allowlist de `CONTAINERS`, compatibilidad de la CLI/Engine y los logs del backend. No soluciones el problema publicando el socket o el proxy.
 
 El build y los tests locales validan el código y fixtures, pero no sustituyen la prueba contra el Docker Engine real de VPS-WEB. Hasta completar esa comprobación, el despliegue LIVE debe considerarse pendiente de aceptación operativa.
@@ -393,6 +395,7 @@ Objetivos propuestos, sujetos a cambios y sin fechas comprometidas:
 | Versión objetivo | Alcance previsto |
 |---|---|
 | v0.6.0 | Docker LIVE: endpoints de contenedores y estadísticas, descubrimiento dinámico y metadatos de runtime; despliegue Compose y proxy de socket preparados, pendiente de validación en VPS-WEB. |
+| v0.6.1-alpha | Release candidate con System Diagnostics, healthchecks y checklist de despliegue; lista para validación operativa, aún no certificada para producción. |
 | v0.7.0 | Coolify Integration. |
 | v0.8.0 | Proxmox Integration. |
 | v0.9.0 | SGS & Wallboard Integration. |
@@ -402,7 +405,27 @@ El camino hacia una operación real también requiere persistencia, autenticaci�
 
 ## Estado actual y publicación
 
-La versión preparada es **0.5.0**. Consulta el [changelog](CHANGELOG.md) y las [notas de versión](docs/release-notes/v0.5.0.md). La licencia está pendiente de decisión del propietario; la publicación en GitHub no concede por sí misma una licencia de uso.
+La versión preparada para validación es **v0.6.1-alpha**. `VERSION`, `package.json` y `package-lock.json` deben coincidir; consulta el [changelog](CHANGELOG.md), las [notas v0.5.0](docs/release-notes/v0.5.0.md) y las [notas v0.6.1-alpha](docs/release-notes/v0.6.1-alpha.md). La licencia está pendiente de decisión del propietario; la publicación en GitHub no concede por sí misma una licencia de uso.
+
+### Release Candidate Checklist
+
+- [x] `VERSION`, `package.json` y `package-lock.json` sincronizados en `0.6.1-alpha`.
+- [x] `npm run build`, `npm run lint` y `npm test` pasan localmente.
+- [x] Notas de versión y changelog preparados para `v0.6.1-alpha`.
+- [ ] Confirmar rama y publicar/taggear el release candidate en GitHub.
+- [ ] Validar Compose e imágenes en Linux con Docker Compose.
+- [ ] Ejecutar en VPS-WEB la [Deployment Validation Checklist](docs/deployment-coolify.md#deployment-validation-checklist).
+
+### Deployment Validation Checklist
+
+- [ ] Coolify despliega el Compose con Base Directory `/deploy`, contexto de build en la raíz y los tres servicios quedan saludables.
+- [ ] HTTPS funciona en el servicio web; API y socket proxy no tienen puertos ni dominios públicos.
+- [ ] `/api/health` y `/api/diagnostics` responden correctamente desde el dominio autorizado.
+- [ ] `/api/docker/containers` y `/api/docker/stats` responden HTTP 200 con datos del Docker Engine esperado.
+- [ ] System Diagnostics muestra fuente `LIVE`, versión Docker, conteo de contenedores y última detección.
+- [ ] Revisados logs, autenticación del dominio, permisos del proxy y reinicio/recuperación en VPS-WEB.
+
+Las casillas marcadas corresponden a comprobaciones locales de release; las casillas sin marcar siguen pendientes en GitHub, Linux o VPS-WEB según corresponda. No declarar `DEPLOYMENT READY` hasta completar los checks del VPS.
 
 Las [plantillas de issues y pull requests](.github/) y la [guía de etiquetas](docs/github-labels.md) preparan el flujo de colaboración. Las etiquetas documentadas deben crearse o verificarse en el repositorio de GitHub.
 

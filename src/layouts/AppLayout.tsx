@@ -1,5 +1,5 @@
 import { Link, Outlet } from 'react-router-dom'
-import { Radar } from 'lucide-react'
+import { Activity, Radar } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmbientBackground } from '@/features/ambient/AmbientBackground'
 import { ThemeSwitcher } from '@/features/theme/ThemeSwitcher'
@@ -28,6 +28,14 @@ export function AppLayout() {
           </div>
         </Link>
         <div className="flex items-center gap-2 text-xs sm:gap-4">
+          <Link
+            to="/diagnostics"
+            aria-label="System Diagnostics"
+            className="inline-flex items-center gap-1.5 rounded border border-neon/20 px-2 py-1 text-slate-300 hover:border-neon/50 hover:text-neon"
+          >
+            <Activity aria-hidden="true" className="size-3.5" />
+            <span className="hidden sm:inline">Diagnostics</span>
+          </Link>
           <ThemeSwitcher />
           <span className="hidden items-center gap-1 text-ok sm:flex">
             <span className="size-2 animate-pulse rounded-full bg-ok" style={{ boxShadow: '0 0 8px var(--theme-success)' }} />

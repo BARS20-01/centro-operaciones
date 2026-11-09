@@ -3,6 +3,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { AppLayout } from '@/layouts/AppLayout'
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+const SystemDiagnosticsPage = lazy(() => import('@/pages/SystemDiagnosticsPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 
 const router = createBrowserRouter([
@@ -11,6 +12,7 @@ const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <DashboardPage /> },
+      { path: 'diagnostics', element: <SystemDiagnosticsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
