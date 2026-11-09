@@ -2,6 +2,7 @@ import { Link, Outlet } from 'react-router-dom'
 import { Radar } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmbientBackground } from '@/features/ambient/AmbientBackground'
+import { ThemeSwitcher } from '@/features/theme/ThemeSwitcher'
 
 function Clock() {
   const [now, setNow] = useState(() => new Date())
@@ -26,9 +27,10 @@ export function AppLayout() {
             <span className="text-[9px] uppercase tracking-[0.25em] text-neon/70">Engineering Operations Nexus</span>
           </div>
         </Link>
-        <div className="flex items-center gap-4 text-xs">
+        <div className="flex items-center gap-2 text-xs sm:gap-4">
+          <ThemeSwitcher />
           <span className="hidden items-center gap-1 text-ok sm:flex">
-            <span className="size-2 animate-pulse rounded-full bg-ok shadow-[0_0_8px_#34d399]" />
+            <span className="size-2 animate-pulse rounded-full bg-ok" style={{ boxShadow: '0 0 8px var(--theme-success)' }} />
             SISTEMA OPERATIVO
           </span>
           <Clock />

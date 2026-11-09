@@ -1,7 +1,8 @@
 import { memo } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import type { NodeOrientation } from './layout'
 
-export type ClusterNodeType = Node<{ label: string; count: number }, 'cluster'>
+export type ClusterNodeType = Node<{ label: string; count: number; orientation: NodeOrientation }, 'cluster'>
 
 function ClusterNodeComponent({ data }: NodeProps<ClusterNodeType>) {
   return (
@@ -9,7 +10,7 @@ function ClusterNodeComponent({ data }: NodeProps<ClusterNodeType>) {
       <div className="px-3 pt-1.5 text-[10px] uppercase tracking-widest text-slate-500">
         {data.label} · {data.count}
       </div>
-      <Handle id="in" type="target" position={Position.Top} isConnectable={false} />
+      <Handle id="in" type="target" position={data.orientation === 'horizontal' ? Position.Left : Position.Top} isConnectable={false} />
     </div>
   )
 }

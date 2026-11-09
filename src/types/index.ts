@@ -43,6 +43,15 @@ export interface TwinNode {
   origin: 'declared' | 'discovered'
   /** Business criticality; when absent it falls back to a per-layer default. */
   criticality?: Criticality
+  description?: string
+  category?: string
+  repositoryUrl?: string
+  updatedAt?: string
+  source?: 'live' | 'simulated'
+  image?: string
+  ports?: string[]
+  networks?: string[]
+  startedAt?: string
   metrics?: NodeMetrics
 }
 

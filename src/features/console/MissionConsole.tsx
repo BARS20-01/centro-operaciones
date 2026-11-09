@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ChevronDown, Terminal } from 'lucide-react'
 import { Timeline } from '@/features/timeline/Timeline'
@@ -12,10 +12,12 @@ const COUNT_WINDOW_MS = 5 * 60_000
 
 type View = 'console' | 'timeline'
 
-export function MissionConsole({ events }: { events: OpsEvent[] }) {
+export function MissionConsole({ events, operationsMode = false }: { events: OpsEvent[]; operationsMode?: boolean }) {
   const [open, setOpen] = useState(true)
   const [view, setView] = useState<View>('console')
   const [hidden, setHidden] = useState<Set<EventSeverity>>(new Set())
+  const activeView: View = operationsMode ? 'console' : view
+  const views: View[] = operationsMode ? ['console'] : ['console', 'timeline']
 
   const counts = useMemo(() => {
     const c: Record<EventSeverity, number> = { info: 0, success: 0, warn: 0, error: 0 }
@@ -55,16 +57,16 @@ export function MissionConsole({ events }: { events: OpsEvent[] }) {
           <span className="size-1.5 animate-pulse rounded-full bg-ok" /> LIVE
         </span>
         <div className="flex gap-1" role="tablist" aria-label="Vista">
-          {(['console', 'timeline'] as const).map((v) => (
+          {views.map((v) => (
             <button
               key={v}
               role="tab"
-              aria-selected={view === v}
+              aria-selected={activeView === v}
               onClick={() => {
                 setView(v)
                 setOpen(true)
               }}
-              className={`rounded border px-2 py-0.5 text-[10px] ${view === v ? 'border-neon/60 bg-neon/10 text-neon' : 'border-neon/15 text-slate-400 hover:text-slate-200'}`}
+              className={`rounded border px-2 py-0.5 text-[10px] ${activeView === v ? 'border-neon/60 bg-neon/10 text-neon' : 'border-neon/15 text-slate-400 hover:text-slate-200'}`}
             >
               {v === 'console' ? 'Console' : 'Timeline'}
             </button>
@@ -91,11 +93,11 @@ export function MissionConsole({ events }: { events: OpsEvent[] }) {
 
       <motion.div
         initial={false}
-        animate={{ height: open ? (view === 'timeline' ? 210 : 124) : 0 }}
+        animate={{ height: open ? (activeView === 'timeline' ? 210 : 124) : 0 }}
         transition={{ duration: 0.3 }}
         className="flex flex-col overflow-hidden bg-black/40"
       >
-        {view === 'timeline' ? (
+        {activeView === 'timeline' ? (
           <Timeline events={visible} />
         ) : (
           <>
@@ -106,7 +108,7 @@ export function MissionConsole({ events }: { events: OpsEvent[] }) {
                   <span className="w-12 shrink-0 font-bold" style={{ color: severityColor[e.severity] }}>
                     {e.severity === 'success' ? 'OK' : e.severity.toUpperCase()}
                   </span>
-                  <span className="hidden w-28 shrink-0 truncate text-cyan-300/80 sm:inline">{e.source}</span>
+                  <span className="hidden w-28 shrink-0 truncate text-neon/80 sm:inline">{e.source}</span>
                   <span className="truncate text-slate-300">{e.message}</span>
                 </li>
               ))}
@@ -122,4 +124,3 @@ export function MissionConsole({ events }: { events: OpsEvent[] }) {
     </section>
   )
 }
-

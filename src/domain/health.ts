@@ -143,11 +143,11 @@ export const relationBetween = (graph: TwinGraph, from: string, to: string): 'ho
 export type HealthLevel = 'optimal' | 'healthy' | 'degraded' | 'at-risk' | 'critical'
 
 export const HEALTH_LEVELS: Record<HealthLevel, { label: string; color: string; range: string }> = {
-  optimal: { label: 'OPTIMAL', color: '#34d399', range: '95-100' },
-  healthy: { label: 'HEALTHY', color: '#22d3ee', range: '80-94' },
-  degraded: { label: 'DEGRADED', color: '#fbbf24', range: '60-79' },
-  'at-risk': { label: 'AT RISK', color: '#fb923c', range: '40-59' },
-  critical: { label: 'CRITICAL', color: '#fb7185', range: '0-39' },
+  optimal: { label: 'OPTIMAL', color: 'var(--theme-success)', range: '95-100' },
+  healthy: { label: 'HEALTHY', color: 'var(--theme-primary)', range: '80-94' },
+  degraded: { label: 'DEGRADED', color: 'var(--theme-warning)', range: '60-79' },
+  'at-risk': { label: 'AT RISK', color: 'var(--theme-secondary)', range: '40-59' },
+  critical: { label: 'CRITICAL', color: 'var(--theme-error)', range: '0-39' },
 }
 
 export function levelOf(score: number): HealthLevel {
@@ -224,10 +224,10 @@ export function computeNexusHealth(model: HealthModel, resources: Resources, ale
 export type OperationalLabel = 'Excellent' | 'Good' | 'Warning' | 'Critical'
 
 export const OPERATIONAL_LABELS: Record<OperationalLabel, string> = {
-  Excellent: '#34d399',
-  Good: '#22d3ee',
-  Warning: '#fbbf24',
-  Critical: '#fb7185',
+  Excellent: 'var(--theme-success)',
+  Good: 'var(--theme-primary)',
+  Warning: 'var(--theme-warning)',
+  Critical: 'var(--theme-error)',
 }
 
 export interface OperationalScore {

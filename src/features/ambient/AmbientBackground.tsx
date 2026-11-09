@@ -18,6 +18,10 @@ function Particles({ count = 70 }: { count?: number }) {
     const canvas = ref.current!
     const ctx = canvas.getContext('2d')!
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let particleColor = getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim()
+    const updateParticleColor = () => {
+      particleColor = getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim()
+    }
     let w = 0
     let h = 0
     let raf = 0
@@ -54,8 +58,10 @@ function Particles({ count = 70 }: { count?: number }) {
         }
         ctx.beginPath()
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(103, 232, 249, ${p.a})`
+        ctx.globalAlpha = p.a
+        ctx.fillStyle = particleColor
         ctx.fill()
+        ctx.globalAlpha = 1
       }
       raf = requestAnimationFrame(frame)
     }
@@ -65,11 +71,13 @@ function Particles({ count = 70 }: { count?: number }) {
     }
     raf = requestAnimationFrame(frame)
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('nexus-theme-change', updateParticleColor)
 
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('nexus-theme-change', updateParticleColor)
     }
   }, [count])
 
@@ -79,17 +87,17 @@ function Particles({ count = 70 }: { count?: number }) {
 export function AmbientBackground() {
   return (
     <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,#0b1a2e_0%,#05070d_70%)]" />
+      <div className="ambient-wash absolute inset-0" />
       <div className="grid-drift absolute inset-0" />
       <div className="grid-floor absolute inset-x-0 bottom-0 h-1/2" />
 
       <motion.div
-        className="absolute -left-1/4 top-0 h-2/3 w-3/4 rounded-full bg-cyan-500/10 blur-[120px]"
+        className="ambient-primary absolute -left-1/4 top-0 h-2/3 w-3/4 rounded-full blur-[120px]"
         animate={{ x: ['0%', '25%', '0%'], opacity: [0.5, 0.9, 0.5] }}
         transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute -right-1/4 bottom-0 h-2/3 w-3/4 rounded-full bg-fuchsia-500/10 blur-[130px]"
+        className="ambient-secondary absolute -right-1/4 bottom-0 h-2/3 w-3/4 rounded-full blur-[130px]"
         animate={{ x: ['0%', '-25%', '0%'], opacity: [0.4, 0.8, 0.4] }}
         transition={{ duration: 28, repeat: Infinity, ease: 'easeInOut' }}
       />

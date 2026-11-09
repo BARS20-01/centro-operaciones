@@ -3,7 +3,7 @@
 **Engineering Operations Nexus**  
 Digital Twin Platform para visualizar infraestructura, servicios, aplicaciones y laboratorios desde un Command Center.
 
-> **Estado actual: versión 0.5.0, prototipo frontend.** El grafo inicial, los KPI, los incidentes y la línea de tiempo son simulados. Docker puede consumir un endpoint HTTP normalizado, pero utiliza datos simulados cuando no está disponible. No existe backend, persistencia, autenticación ni conexión directa al socket Docker en este repositorio. Los indicadores no sustituyen herramientas de monitorización de producción.
+> **Estado actual: backend Docker LIVE preparado para v0.6.0; despliegue y validación en VPS pendientes.** La API Express consulta Docker mediante una CLI conectada a un Docker Socket Proxy de solo lectura; si la API no está disponible, el adaptador usa datos simulados. El grafo inicial, los KPI generales, los incidentes y la línea de tiempo siguen siendo simulados. La API no implementa autenticación propia. Los indicadores no sustituyen herramientas de monitorización de producción.
 
 ## Visión
 
@@ -38,14 +38,37 @@ Estos objetivos se encuentran en distintas etapas: la implementación actual com
 | Timeline | Resumen temporal de eventos por categoría. |
 | Docker Integration Adapter | Descubrimiento mediante HTTP normalizado o simulación. |
 
+## View Modes
+
+Los modos son presentaciones alternativas del mismo `TwinGraph`, el mismo informe `HealthReport` y el mismo flujo de descubrimiento. No crean stores, integraciones ni cálculos operacionales separados.
+
+| Modo | Presentación |
+|---|---|
+| NEXUS MODE | Árbol jerárquico existente con filtros y ramas expandibles. |
+| OBSIDIAN MODE | Knowledge Graph distribuido en columnas por capa; conserva relaciones de hosting y destaca dependencias. |
+| HOMELAB MODE | Árbol de hosting rotado para seguir el flujo físico de host a guest; oculta las aristas de dependencias para enfocar la infraestructura alojada. |
+| OPERATIONS MODE | Matriz priorizada por estado efectivo, con NEXUS HEALTH, Timeline, Mission Console e Impact Propagation. |
+
+AI Operations, Security Operations e Infrastructure Operations quedan como modos futuros deshabilitados, no como vistas funcionales.
+
+## Theme Engine
+
+El dashboard ofrece cinco identidades visuales intercambiables desde el encabezado: NEXUS, ALTAIR, OBSIDIAN, HELIX y UNAB. `ThemeProvider` guarda la selección en `localStorage` y actualiza tokens CSS semánticos sin cambiar la fuente de datos, el modo operacional ni el cálculo de layouts.
+
+Los tokens compartidos incluyen fondo, superficie, primario, secundario, éxito, advertencia, error, glow y conexiones. Los metadatos de contexto del Inspector son opcionales para mantener compatibilidad con entidades existentes. `KnowledgeEntity` y `KnowledgeRelation` definen contratos desacoplados para una futura vista de Knowledge Graph; esa vista aún no está implementada.
+
 ## Arquitectura actual
 
 ```text
   Datos iniciales y simulación                 Docker Integration
   src/data/mock.ts + useMockOps                HTTP o simulador
              |                                      |
-             |                               discover() cada 5 s
+             |                          discover() + espera de 5 s
              |                                      |
+             |                  Express API <-- Docker CLI (host)
+             |                         |
+             |                    HTTP normalizado
+             |                         |
              +------------------+-------------------+
                                 v
                      mergeDiscovery / TwinGraph
@@ -66,11 +89,11 @@ Estos objetivos se encuentran en distintas etapas: la implementación actual com
                    Inspector
 ```
 
-`useMockOps` conserva el estado en memoria, actualiza KPI simulados cada 2 segundos, genera eventos e incidentes y consulta el adaptador Docker. `settle()` recalcula el informe de salud a partir del grafo, los KPI, los eventos y el historial de puntuación. Recargar la página reinicia ese estado.
+`useMockOps` conserva el estado en memoria, actualiza KPI simulados cada 2 segundos, genera eventos e incidentes y consulta el adaptador Docker. El sondeo se programa cinco segundos después de completar cada consulta. `settle()` recalcula el informe de salud a partir del grafo, los KPI, los eventos y el historial de puntuación. Recargar la página reinicia ese estado.
 
 ### Stack y estructura
 
-React, TypeScript y Vite; Tailwind CSS para estilos, Framer Motion para animaciones, `@xyflow/react` para el grafo, Lucide para iconos y React Router para la navegación.
+React, TypeScript y Vite; Tailwind CSS para estilos, Framer Motion para animaciones, `@xyflow/react` para el grafo, Lucide para iconos y React Router para la navegación. La API utiliza Node.js, Express y la CLI de Docker.
 
 ```text
 src/
@@ -87,7 +110,13 @@ src/
   integrations/        Contratos, registry y adaptador Docker
   pages/               Composición de la página
   types/               Tipos del dominio
+server/                API Express y recopilación mediante Docker CLI
+frontend/              Dockerfile y configuración Nginx del frontend
+backend/               Dockerfile de runtime para la API Node
+deploy/compose.yaml    Stack Coolify: web, API y Docker Socket Proxy
 ```
+
+`frontend/` y `backend/` contienen los artefactos de empaquetado/despliegue; el código fuente actual permanece en `src/` y `server/` para no cambiar las rutas ni el flujo de desarrollo.
 
 ### Modelo del Digital Twin
 
@@ -208,7 +237,7 @@ GET /api/docker/containers
 Accept: application/json
 ```
 
-La URL puede configurarse con `VITE_DOCKER_API_URL` **en tiempo de build**. La respuesta esperada es un arreglo JSON con este contrato normalizado; no es la respuesta nativa del Docker Engine:
+La integración consulta `GET /api/docker/containers` y `GET /api/docker/stats`. `VITE_DOCKER_API_URL` y `VITE_DOCKER_STATS_URL` permiten configurar ambas URLs **en tiempo de build**; por defecto se usan las rutas anteriores. El endpoint de contenedores devuelve un arreglo normalizado, no la respuesta nativa del Docker Engine:
 
 ```json
 [
@@ -221,16 +250,28 @@ La URL puede configurarse con `VITE_DOCKER_API_URL` **en tiempo de build**. La r
     "cpuPercent": 12.5,
     "memBytes": 429916160,
     "memLimitBytes": 1073741824,
+    "status": "running",
+    "cpu": 12.5,
+    "ram": { "bytes": 429916160, "limitBytes": 1073741824, "percent": 40 },
+    "uptime": 3600,
+    "ports": ["127.0.0.1:3000 → 3000/tcp"],
+    "networks": ["nexus"],
     "dependsOn": ["postgres"]
   }
 ]
 ```
 
-Los estados aceptados son `running`, `restarting`, `paused`, `exited` y `dead`. El adaptador deriva el uptime y el porcentaje de memoria, convierte los contenedores en nodos de la capa de servicios bajo Docker y publica dependencias y eliminaciones. El Inspector muestra CPU, RAM y uptime de los nodos con métricas.
+Cada lectura incluye estado, imagen, uso de CPU y RAM, porcentaje de memoria, inicio, uptime (segundos), puertos, redes y dependencias disponibles. `/api/docker/stats` devuelve solo contenedores activos con `id`, `name`, `cpu`, `memory`, `memoryLimit` y `memoryPercent`. Las dependencias se extraen de etiquetas Compose `com.docker.compose.depends_on` y enlaces Docker heredados; Docker no ofrece una relación de dependencias genérica para contenedores sin esos metadatos.
 
-La petición tiene un timeout de 1,5 segundos; si falla, el adaptador usa el simulador e intenta nuevamente la fuente HTTP después de 30 segundos. `source` identifica la última fuente como `live` o `simulated`. El registro de nuevos contenedores indica `live` o `sim`; no existe un indicador persistente de procedencia en el dashboard. Un 404 del endpoint por defecto es esperable si no se ha configurado un servicio.
+Los estados aceptados son `running`, `restarting`, `paused`, `exited` y `dead`. Todos los contenedores encontrados se descubren bajo Docker, incluidos nombres no conocidos de antemano como `coolify-db`, `coolify-redis`, `coolify-proxy` y `coolify-sentinel`. El Inspector muestra imagen, puertos, redes, fecha de inicio, CPU, RAM y uptime.
 
-El proyecto **no incluye** ese endpoint ni autenticación. Para datos reales hace falta un servicio o proxy que produzca el contrato, controles de acceso y una configuración de red apropiada (incluido CORS si corresponde). No expongas el socket de Docker ni credenciales al navegador.
+El backend ejecuta `docker ps --all`, `docker inspect` y `docker stats --no-stream`: lista todos los contenedores y recopila CPU y memoria de los que están ejecutándose. Para los detenidos informa métricas de CPU y memoria cero. El inicio obtenido mediante `inspect` permite al adaptador calcular el uptime. Las imágenes, nombres, puertos y redes proceden de Docker; no hay una lista fija de contenedores reales. Las respuestas concurrentes de ambos endpoints comparten una misma recopilación en curso.
+
+La petición tiene un timeout de 40 segundos; cada comando Docker tiene un límite de 12 segundos. Los IDs se inspeccionan y consultan en lotes de 100. Si la API falla o devuelve datos inválidos, el adaptador usa el simulador y espera al menos 30 segundos antes de reintentar HTTP. La barra del mapa indica **Docker: LIVE** o **SIMULATED**, además de `CHECKING` durante la primera consulta y `UNAVAILABLE` si también falla la simulación. El indicador se refiere exclusivamente a Docker, no a los KPI y eventos generales.
+
+La API devuelve HTTP 503 ante fallos de la CLI o datos incompletos; los detalles se registran en el servidor. Es de solo lectura, no acepta comandos Docker desde el cliente, no habilita CORS y configura respuestas `no-store` y encabezados de seguridad. Escucha por defecto en `127.0.0.1:3001`; para enlazar una interfaz remota se requieren `API_HOST` y `API_ALLOW_REMOTE=true`. No la expongas directamente a Internet ni expongas el socket Docker: una API remota requiere un proxy con autenticación y TLS. La cuenta que ejecuta la API necesita acceso al daemon Docker, privilegio equivalente a control elevado del host.
+
+La respuesta Docker real no ha podido validarse contra un daemon en el entorno de desarrollo actual porque la CLI Docker no está instalada; las pruebas cubren la normalización mediante fixtures. Antes de declarar el despliegue operativo, ejecutar el backend en VPS-WEB y comprobar `/api/docker/containers`, `/api/docker/stats` y el indicador `LIVE` desde el dashboard.
 
 ## Mission Console y Timeline
 
@@ -242,7 +283,7 @@ Los eventos se guardan solo en memoria, con un máximo de 3.000; el historial in
 
 | Fuente | Situación actual | Trabajo futuro |
 |---|---|---|
-| Docker | Adaptador HTTP normalizado y fallback simulado | Servicio seguro con datos reales y autenticación |
+| Docker | Backend CLI, endpoints de contenedores/estadísticas, adaptador HTTP y fallback simulado | Validación en un Docker Engine real y despliegue detrás de un proxy autenticado |
 | Proxmox | Entrada placeholder en registry | Adaptador para hosts y máquinas virtuales |
 | Coolify | Entrada placeholder en registry | Adaptador para despliegues y recursos |
 | SGS, Wallboard, LabScreen | Entradas placeholder en registry | Adaptadores para estado y métricas de aplicaciones |
@@ -252,35 +293,96 @@ Las entradas placeholder responden `false` a `ping()` y no descubren nodos. Un a
 
 ## Desarrollo local
 
-Requisitos: Node.js compatible con Vite y el plugin React instalados (`^20.19.0` o `>=22.12.0`), npm y las dependencias del lockfile. El proyecto no fija actualmente `engines.node`.
+Requisitos: Node.js compatible con Vite y el plugin React instalados (`^20.19.0` o `>=22.12.0`), npm y las dependencias del lockfile. Para datos reales se necesita la CLI de Docker, un daemon accesible y permisos para ejecutar `docker ps`, `docker inspect` y `docker stats`. El proyecto no fija actualmente `engines.node`.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Vite muestra la URL local al arrancar. Para comprobar y generar la compilación:
+`npm run dev` inicia la API en `127.0.0.1:3001` y Vite; este hace proxy de `/api` a la API. Vite muestra la URL local al arrancar. Si Docker no está instalado o accesible, la aplicación continúa en modo simulado. Para comprobar y generar la compilación:
 
 ```bash
 npm run lint
+npm test
 npm run build
-npm run preview
+npm run start:api
 ```
 
-`build` ejecuta TypeScript y genera archivos estáticos en `dist/`; `preview` sirve esa compilación para inspección local, no es un servidor de producción.
+`build` ejecuta TypeScript y genera el frontend en `dist/` y la API en `dist-server/`. `start:api` requiere un build previo y solo inicia la API. `npm run preview` permite inspeccionar el frontend, pero no configura un proxy a la API; sirve ambos bajo un proxy externo para probar la integración completa. `API_HOST` y `API_PORT` configuran la escucha de la API; el proxy de desarrollo de Vite apunta a `127.0.0.1:3001`, por lo que cambiar ese puerto requiere ajustar también el proxy.
 
-## Deployment through Coolify
+## Deployment en Coolify — VPS-WEB
 
-El repositorio contiene código fuente Vite, no un Dockerfile ni un servidor de producción. Una opción es desplegar la salida estática con el build pack **Nixpacks** de Coolify:
+El despliegue de producción recomendado es un solo recurso **Docker Compose** en Coolify que crea tres servicios separados:
 
-1. Conecta el repositorio Git y crea una aplicación con la raíz del proyecto como directorio base.
-2. Selecciona **Nixpacks** y el tipo de sitio **SPA** (o la opción equivalente para sitio estático según la versión de Coolify).
-3. Configura la instalación con `npm ci`, el build con `npm run build` y el directorio de publicación `dist`. Fija una versión de Node compatible con los requisitos anteriores.
-4. Si existe un endpoint Docker, configura `VITE_DOCKER_API_URL` como variable disponible **durante el build**, y vuelve a desplegar cuando cambie. Si usas `/api/docker/containers`, configura por separado un proxy hacia el servicio; el sitio estático no implementa esa ruta.
-5. Configura dominio y HTTPS en Coolify. Asegura que las rutas de la SPA vuelvan a `index.html`; si la configuración predeterminada no lo hace, ajusta la configuración de Nginx en Coolify y reconstruye la imagen.
-6. Despliega y comprueba la página, los assets, una ruta del cliente y, si procede, el endpoint Docker. Sin endpoint, el adaptador utiliza su simulador.
+```text
+Coolify HTTPS ingress
+        |
+        v
+nexus-prime-web (Nginx :80)
+        | /api/* en red web-api
+        v
+nexus-prime-api (Express :3001)
+        | DOCKER_HOST=tcp://nexus-prime-docker-proxy:2375
+        | red api-docker privada
+        v
+nexus-prime-docker-proxy
+        | único servicio que monta el socket del host
+        v
+/var/run/docker.sock
+```
 
-Los nombres de las opciones pueden variar entre versiones. Consulta la [documentación oficial de Nixpacks en Coolify](https://coolify.io/docs/applications/builds/nixpacks/overview). Esta guía describe una configuración posible; el repositorio no incluye una configuración de despliegue validada ni gestiona secretos, proxy o autenticación.
+`deploy/compose.yaml` declara web, API, proxy Docker y redes separadas. Coolify debe crear el recurso usando ese archivo con la raíz del repositorio como contexto. Configura el dominio HTTPS únicamente en el servicio `nexus-prime-web`, apuntando al puerto interno `80`. No asignes dominio, puerto público ni acceso externo a `nexus-prime-api` o al socket proxy. Nginx sirve `dist/`, resuelve rutas SPA y reenvía `/api/` por la red privada al backend. La API no se expone al navegador directamente.
+
+### Build y start
+
+| Servicio | Dockerfile | Build Command | Start Command | Puerto |
+|---|---|---|---|---|
+| `nexus-prime-web` | `frontend/Dockerfile` | Build de imagen; dentro ejecuta `npm ci && npm run build` y copia `dist/` a Nginx | Nginx, comando de imagen | `80` interno, publicado por Coolify con HTTPS |
+| `nexus-prime-api` | `backend/Dockerfile` | Build de imagen; dentro ejecuta `npm ci && npm run build`, luego elimina dependencias de desarrollo | `node dist-server/index.js` | `3001` solo en las redes Compose |
+| `nexus-prime-docker-proxy` | Imagen proxy externa | No se construye en este repositorio | Comando de la imagen | `2375` solo en `api-docker`; no publicar |
+
+Para ejecución fuera de Coolify, desde la raíz:
+
+```sh
+docker compose -f deploy/compose.yaml up -d --build
+```
+
+Coolify usa los Dockerfiles indicados por el Compose; no configures `dist/` como Publish Directory de ese recurso. Si se despliega solo el frontend, el Publish Directory es `dist/`, pero ese modo requiere que se configure por separado un reverse proxy `/api` hacia la API.
+
+### Variables
+
+Define las variables en el recurso Compose de Coolify. `VITE_*` se usan como build args y requieren rebuild al cambiar. Las variables del backend son runtime:
+
+| Variable | Servicio | Valor recomendado / propósito |
+|---|---|---|
+| `DOCKER_SOCKET_PROXY_IMAGE` | socket proxy | Obligatoria. Imagen revisada y fijada por versión/digest, por ejemplo `ghcr.io/tecnativa/docker-socket-proxy@sha256:<digest-aprobado>`. No usar una etiqueta mutable en producción. |
+| `DOCKER_SOCKET_PATH` | socket proxy | `/var/run/docker.sock` por defecto; ruta del socket en el host Docker de Coolify. |
+| `VITE_DOCKER_API_URL` | web (build) | `/api/docker/containers` por defecto, mismo origen HTTPS. |
+| `VITE_DOCKER_STATS_URL` | web (build) | `/api/docker/stats` por defecto, mismo origen HTTPS. |
+| `DOCKER_HOST` | API | `tcp://nexus-prime-docker-proxy:2375`; no apuntar la API al socket del host. |
+| `API_HOST` | API | `0.0.0.0` dentro de la red privada Compose. |
+| `API_PORT` | API | `3001`. |
+| `API_ALLOW_REMOTE` | API | `true` solo dentro de la topología privada descrita. No publicar el puerto del backend. |
+
+### Acceso seguro a Docker
+
+La API usa la CLI Docker, pero **no monta `/var/run/docker.sock`**. Solo `nexus-prime-docker-proxy` recibe ese bind mount. El proxy se conecta al socket y la API habla con él por la red `api-docker`, marcada `internal`. El servicio web no pertenece a esa red; por tanto, no tiene ruta al proxy Docker. El socket/proxy no debe recibir una ruta de ingress o un puerto publicado.
+
+El Compose habilita la sección `CONTAINERS=1`, necesaria para listar, inspeccionar y leer estadísticas; `POST=0` mantiene la API del Engine en solo lectura y las demás secciones sensibles se deshabilitan explícitamente. Las etiquetas Compose pueden declarar dependencias, pero NEXUS PRIME no debe inferir dependencias de aplicación si Docker no las reporta.
+
+El socket sigue siendo una interfaz de privilegio elevado, aunque solo se monte en el proxy. Revisa y fija una versión/digest del proxy, limita sus redes y permisos al mínimo, y no agregues `privileged` salvo que el host requiera explícitamente ese ajuste por SELinux/AppArmor. La API de NEXUS PRIME no tiene autenticación propia; restringe el acceso al dashboard/API con la política de identidad/autenticación del ingress de Coolify cuando corresponda. Nunca publiques `2375`, el socket Unix ni el puerto `3001` a Internet.
+
+### Procedimiento de despliegue y comprobación
+
+1. Confirma en VPS-WEB que Coolify puede acceder al socket Docker del host y que la ruta corresponde al daemon que aloja los contenedores objetivo.
+2. Selecciona un digest revisado de Docker Socket Proxy y define `DOCKER_SOCKET_PROXY_IMAGE` y, si es necesario, `DOCKER_SOCKET_PATH`.
+3. Crea en Coolify el recurso Compose con `deploy/compose.yaml` y la raíz del repositorio como contexto. Construye y levanta los tres servicios.
+4. Asigna el dominio TLS solamente a `nexus-prime-web` en el puerto `80`; no publiques los otros servicios.
+5. Comprueba los logs del backend y consulta desde un entorno autorizado `GET /api/docker/containers` y `GET /api/docker/stats` por el dominio web. Verifica los datos de contenedores esperados y que el dashboard indique `Docker: LIVE`.
+6. Si la API responde `503`, confirma primero conectividad API→proxy, el allowlist de `CONTAINERS`, compatibilidad de la CLI/Engine y los logs del backend. No soluciones el problema publicando el socket o el proxy.
+
+El build y los tests locales validan el código y fixtures, pero no sustituyen la prueba contra el Docker Engine real de VPS-WEB. Hasta completar esa comprobación, el despliegue LIVE debe considerarse pendiente de aceptación operativa.
 
 ## Roadmap
 
@@ -288,7 +390,7 @@ Objetivos propuestos, sujetos a cambios y sin fechas comprometidas:
 
 | Versión objetivo | Alcance previsto |
 |---|---|
-| v0.6.0 | Docker Real Integration: fuente segura de datos reales para el adaptador existente. |
+| v0.6.0 | Docker LIVE: endpoints de contenedores y estadísticas, descubrimiento dinámico y metadatos de runtime; despliegue Compose y proxy de socket preparados, pendiente de validación en VPS-WEB. |
 | v0.7.0 | Coolify Integration. |
 | v0.8.0 | Proxmox Integration. |
 | v0.9.0 | SGS & Wallboard Integration. |

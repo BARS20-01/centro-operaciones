@@ -5,10 +5,10 @@ import { ChevronDown, ChevronRight, Cpu } from 'lucide-react'
 import { statusColor } from '@/lib/status'
 import type { Status } from '@/types'
 import { TwinActions } from './actions'
-import { CORE_SIZE } from './layout'
+import { CORE_SIZE, type NodeOrientation } from './layout'
 
 export type CoreNodeType = Node<
-  { id: string; label: string; status: Status; levelLabel: string; dim: boolean; expandable: boolean; collapsed: boolean; hiddenCount: number },
+  { id: string; label: string; status: Status; levelLabel: string; orientation: NodeOrientation; dim: boolean; expandable: boolean; collapsed: boolean; hiddenCount: number },
   'core'
 >
 
@@ -29,7 +29,10 @@ function CoreNodeComponent({ data }: NodeProps<CoreNodeType>) {
     >
       {/* ambient glow breathing */}
       <motion.div
-        style={{ ...fill, background: `radial-gradient(circle, ${color}55 0%, ${color}15 40%, transparent 70%)` }}
+        style={{
+          ...fill,
+          background: `radial-gradient(circle, color-mix(in srgb, ${color} 33%, transparent) 0%, color-mix(in srgb, ${color} 8%, transparent) 40%, transparent 70%)`,
+        }}
         animate={{ scale: [0.9, 1.15, 0.9], opacity: [0.7, 1, 0.7] }}
         transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
       />
@@ -65,8 +68,8 @@ function CoreNodeComponent({ data }: NodeProps<CoreNodeType>) {
         ))}
       </motion.svg>
       <motion.svg viewBox="-100 -100 200 200" style={fill} animate={{ rotate: -360 }} transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}>
-        <circle r={78} fill="none" stroke="#f0abfc" strokeOpacity={0.7} strokeWidth={1.5} strokeDasharray="60 40 20 40" />
-        <circle cx={0} cy={-78} r={3} fill="#f0abfc" style={{ filter: 'drop-shadow(0 0 5px #f0abfc)' }} />
+        <circle r={78} fill="none" stroke="var(--theme-secondary)" strokeOpacity={0.7} strokeWidth={1.5} strokeDasharray="60 40 20 40" />
+        <circle cx={0} cy={-78} r={3} fill="var(--theme-secondary)" style={{ filter: 'drop-shadow(0 0 5px var(--theme-secondary))' }} />
       </motion.svg>
       <motion.svg viewBox="-100 -100 200 200" style={fill} animate={{ rotate: 360 }} transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}>
         <circle r={62} fill="none" stroke="currentColor" strokeWidth={1} strokeDasharray="2 6" strokeOpacity={0.8} />
@@ -80,7 +83,7 @@ function CoreNodeComponent({ data }: NodeProps<CoreNodeType>) {
         style={{
           inset: '27%',
           border: `2px solid ${color}`,
-          boxShadow: `0 0 50px ${color}88, inset 0 0 30px ${color}44`,
+          boxShadow: `0 0 50px color-mix(in srgb, ${color} 53%, transparent), inset 0 0 30px color-mix(in srgb, ${color} 27%, transparent)`,
         }}
         animate={{ scale: [1, 1.05, 1] }}
         transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
@@ -107,8 +110,8 @@ function CoreNodeComponent({ data }: NodeProps<CoreNodeType>) {
         )}
       </motion.div>
 
-      <Handle id="in" type="target" position={Position.Top} isConnectable={false} />
-      <Handle id="out" type="source" position={Position.Bottom} isConnectable={false} />
+      <Handle id="in" type="target" position={data.orientation === 'horizontal' ? Position.Left : Position.Top} isConnectable={false} />
+      <Handle id="out" type="source" position={data.orientation === 'horizontal' ? Position.Right : Position.Bottom} isConnectable={false} />
     </div>
   )
 }

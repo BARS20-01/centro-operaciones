@@ -53,6 +53,9 @@ const sameMetrics = (a?: TwinNode['metrics'], b?: TwinNode['metrics']) =>
   a === b ||
   (!!a && !!b && a.cpuPercent === b.cpuPercent && a.memPercent === b.memPercent && a.memBytes === b.memBytes && a.uptimeSec === b.uptimeSec)
 
+const sameStrings = (a?: string[], b?: string[]) =>
+  a === b || (!!a && !!b && a.length === b.length && a.every((value, index) => value === b[index]))
+
 const sameNode = (a: TwinNode, b: TwinNode) =>
   a.name === b.name &&
   a.kind === b.kind &&
@@ -61,6 +64,15 @@ const sameNode = (a: TwinNode, b: TwinNode) =>
   a.parentId === b.parentId &&
   a.origin === b.origin &&
   a.criticality === b.criticality &&
+  a.description === b.description &&
+  a.category === b.category &&
+  a.repositoryUrl === b.repositoryUrl &&
+  a.updatedAt === b.updatedAt &&
+  a.source === b.source &&
+  a.image === b.image &&
+  a.startedAt === b.startedAt &&
+  sameStrings(a.ports, b.ports) &&
+  sameStrings(a.networks, b.networks) &&
   sameMetrics(a.metrics, b.metrics)
 
 /**

@@ -1,0 +1,17 @@
+.git
+.github
+.vscode
+.idea
+node_modules
+dist
+dist-server
+dist-ssr
+coverage
+logs
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets

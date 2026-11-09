@@ -1,14 +1,14 @@
 import type { Criticality, EventCategory, EventSeverity, Health, Layer, Status } from '@/types'
 
 export const statusColor: Record<Status, string> = {
-  ok: '#34d399',
-  warn: '#fbbf24',
-  critical: '#fb7185',
-  offline: '#64748b',
+  ok: 'var(--theme-success)',
+  warn: 'var(--theme-warning)',
+  critical: 'var(--theme-error)',
+  offline: 'var(--theme-connection)',
 }
 
 /** Effective health palette: impacted is orange so it never reads as warn (amber) or critical (red). */
-export const healthColor: Record<Health, string> = { ...statusColor, impacted: '#fb923c' }
+export const healthColor: Record<Health, string> = { ...statusColor, impacted: 'var(--theme-secondary)' }
 
 export const healthLabel: Record<Health, string> = {
   ok: 'OK',
@@ -19,33 +19,33 @@ export const healthLabel: Record<Health, string> = {
 }
 
 export const criticalityMeta: Record<Criticality, { label: string; color: string; pips: number }> = {
-  critical: { label: 'CRITICAL', color: '#fb7185', pips: 4 },
-  high: { label: 'HIGH', color: '#fb923c', pips: 3 },
-  medium: { label: 'MEDIUM', color: '#fbbf24', pips: 2 },
-  low: { label: 'LOW', color: '#64748b', pips: 1 },
+  critical: { label: 'CRITICAL', color: 'var(--theme-error)', pips: 4 },
+  high: { label: 'HIGH', color: 'var(--theme-warning)', pips: 3 },
+  medium: { label: 'MEDIUM', color: 'var(--theme-secondary)', pips: 2 },
+  low: { label: 'LOW', color: 'var(--theme-connection)', pips: 1 },
 }
 
 export const categoryMeta: Record<EventCategory, { label: string; color: string }> = {
-  infrastructure: { label: 'Infraestructura', color: '#22d3ee' },
-  applications: { label: 'Aplicaciones', color: '#f0abfc' },
-  labs: { label: 'Laboratorios', color: '#60a5fa' },
-  security: { label: 'Seguridad', color: '#facc15' },
+  infrastructure: { label: 'Infraestructura', color: 'var(--theme-primary)' },
+  applications: { label: 'Aplicaciones', color: 'var(--theme-secondary)' },
+  labs: { label: 'Laboratorios', color: 'var(--theme-success)' },
+  security: { label: 'Seguridad', color: 'var(--theme-warning)' },
 }
 
 export const severityColor: Record<EventSeverity, string> = {
-  info: '#22d3ee',
-  success: '#34d399',
-  warn: '#fbbf24',
-  error: '#fb7185',
+  info: 'var(--theme-primary)',
+  success: 'var(--theme-success)',
+  warn: 'var(--theme-warning)',
+  error: 'var(--theme-error)',
 }
 
 export const LAYERS: Layer[] = ['infrastructure', 'services', 'applications', 'labs']
 
 export const layerMeta: Record<Layer, { label: string; color: string }> = {
-  infrastructure: { label: 'Infrastructure Layer', color: '#22d3ee' },
-  services: { label: 'Servicios', color: '#a78bfa' },
-  applications: { label: 'Application Matrix', color: '#f0abfc' },
-  labs: { label: 'Laboratory Grid', color: '#60a5fa' },
+  infrastructure: { label: 'Infrastructure Layer', color: 'var(--theme-primary)' },
+  services: { label: 'Servicios', color: 'var(--theme-secondary)' },
+  applications: { label: 'Application Matrix', color: 'var(--theme-secondary)' },
+  labs: { label: 'Laboratory Grid', color: 'var(--theme-success)' },
 }
 
 export function statusFromPercent(p: number): Status {

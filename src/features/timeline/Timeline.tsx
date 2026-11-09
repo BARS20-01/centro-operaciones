@@ -50,7 +50,7 @@ function Group({ category, summary, long }: { category: EventCategory; summary: 
               ●
             </span>
             <span className="truncate text-slate-300">
-              <span className="text-cyan-300/70">{e.source}</span> {e.message}
+              <span className="text-neon/70">{e.source}</span> {e.message}
             </span>
           </li>
         ))}

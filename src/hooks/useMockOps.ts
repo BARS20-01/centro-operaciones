@@ -14,6 +14,7 @@ import {
   servicesKpi,
 } from '@/data/mock'
 import { integrations } from '@/integrations/registry'
+import type { DataSource } from '@/integrations/types'
 import { clamp, statusFromPercent } from '@/lib/status'
 import type { EventCategory, OpsEvent, Snapshot, Status, TwinNode } from '@/types'
 
@@ -96,6 +97,7 @@ const withEvents = (state: State, ...events: OpsEvent[]): State =>
  * real integrations (see src/integrations) without touching the UI.
  */
 export function useMockOps() {
+  const [dockerSource, setDockerSource] = useState<DataSource | 'checking' | 'unavailable'>('checking')
   const [state, setState] = useState<State>(() => {
     const snapshot = createInitialSnapshot()
     const nodes = Object.values(snapshot.graph.nodes)
@@ -164,11 +166,24 @@ export function useMockOps() {
       })
     }, 5000)
 
+    let disposed = false
+    let discovery: ReturnType<typeof setTimeout>
     const poll = async () => {
       const source = integrations.docker
       if (!source.discover) return
-      const result = await source.discover().catch(() => null)
-      if (!result) return
+      let result
+      try {
+        result = await source.discover()
+      } catch (error) {
+        console.error('Docker discovery failed:', error)
+        if (!disposed) {
+          setDockerSource('unavailable')
+          discovery = setTimeout(poll, DISCOVERY_MS)
+        }
+        return
+      }
+      if (disposed) return
+      setDockerSource(source.source ?? 'unavailable')
       setState((prev) => {
         const report = mergeDiscovery(prev.snapshot.graph, result)
         if (report.graph === prev.snapshot.graph) return prev
@@ -194,18 +209,19 @@ export function useMockOps() {
         const next = { ...prev, snapshot: { graph: report.graph, kpis } }
         return events.length ? withEvents(next, ...events) : settle(next)
       })
+      discovery = setTimeout(poll, DISCOVERY_MS)
     }
-    const discovery = setInterval(poll, DISCOVERY_MS)
     void poll()
 
     return () => {
+      disposed = true
       clearInterval(metrics)
       clearInterval(feed)
       clearInterval(security)
       clearInterval(incidents)
-      clearInterval(discovery)
+      clearTimeout(discovery)
     }
   }, [])
 
-  return state
+  return { ...state, dockerSource }
 }

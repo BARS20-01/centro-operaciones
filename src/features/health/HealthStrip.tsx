@@ -41,7 +41,12 @@ function HealthStripComponent({ report, history }: Props) {
   const level = HEALTH_LEVELS[nexus.level]
   const opColor = OPERATIONAL_LABELS[operational.label]
   const TrendIcon = operational.trend === 'up' ? ArrowUpRight : operational.trend === 'down' ? ArrowDownRight : ArrowRight
-  const trendColor = operational.trend === 'down' ? '#fb7185' : operational.trend === 'up' ? '#34d399' : '#94a3b8'
+  const trendColor =
+    operational.trend === 'down'
+      ? 'var(--theme-error)'
+      : operational.trend === 'up'
+        ? 'var(--theme-success)'
+        : 'var(--theme-connection)'
   const { components } = nexus
 
   return (
@@ -57,7 +62,7 @@ function HealthStripComponent({ report, history }: Props) {
           <div className="flex items-baseline gap-2">
             <span
               className="font-display text-4xl font-bold tabular-nums leading-none text-slate-100"
-              style={{ textShadow: `0 0 14px ${level.color}99` }}
+              style={{ textShadow: `0 0 14px color-mix(in srgb, ${level.color} 60%, transparent)` }}
               aria-label={`Nexus health ${nexus.score} de 100`}
             >
               {nexus.score}
@@ -65,7 +70,11 @@ function HealthStripComponent({ report, history }: Props) {
             <span className="text-xs text-slate-500">/ 100</span>
             <span
               className="rounded border px-1.5 py-0.5 text-[10px] font-bold tracking-widest"
-              style={{ color: level.color, borderColor: `${level.color}88`, background: `${level.color}14` }}
+              style={{
+                color: level.color,
+                borderColor: `color-mix(in srgb, ${level.color} 53%, transparent)`,
+                background: `color-mix(in srgb, ${level.color} 8%, transparent)`,
+              }}
             >
               {level.label}
             </span>
@@ -102,9 +111,9 @@ function HealthStripComponent({ report, history }: Props) {
         </div>
         <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4">
           <Pillar label="Salud" value={operational.pillars.health} color={level.color} />
-          <Pillar label="Dependencias" value={operational.pillars.dependencies} color="#c084fc" />
-          <Pillar label="Disponibilidad" value={operational.pillars.availability} color="#22d3ee" />
-          <Pillar label="Tendencia" value={operational.pillars.trend} color="#60a5fa" />
+          <Pillar label="Dependencias" value={operational.pillars.dependencies} color="var(--theme-secondary)" />
+          <Pillar label="Disponibilidad" value={operational.pillars.availability} color="var(--theme-primary)" />
+          <Pillar label="Tendencia" value={operational.pillars.trend} color="var(--theme-connection)" />
         </div>
       </div>
 
@@ -114,7 +123,11 @@ function HealthStripComponent({ report, history }: Props) {
             <span
               key={s}
               className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] tabular-nums"
-              style={{ color: healthColor[s], borderColor: `${healthColor[s]}${model.counts[s] ? '88' : '33'}`, opacity: model.counts[s] ? 1 : 0.45 }}
+              style={{
+                color: healthColor[s],
+                borderColor: `color-mix(in srgb, ${healthColor[s]} ${model.counts[s] ? 53 : 20}%, transparent)`,
+                opacity: model.counts[s] ? 1 : 0.45,
+              }}
             >
               <span className="size-1.5 rounded-full" style={{ background: healthColor[s] }} />
               {healthLabel[s]} {model.counts[s]}

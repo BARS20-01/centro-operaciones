@@ -4,6 +4,11 @@ Los cambios relevantes del proyecto se documentan aquí conforme a [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+
+- API Express que recopila contenedores y métricas mediante la CLI de Docker.
+- Indicador de procedencia Docker y pruebas de la API; se mantiene el fallback simulado.
+
 ## [0.5.0]
 
 Primera versión preparada para publicación; fecha de publicación pendiente.

@@ -4,8 +4,12 @@
   "version": "0.5.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch server/index.ts",
+    "dev:web": "vite",
+    "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
+    "start:api": "node dist-server/index.js",
+    "test": "tsx --test server/*.test.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -15,6 +19,7 @@
     "axios": "^1.21.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
+    "express": "^5.1.0",
     "framer-motion": "^14.10.0",
     "lucide-react": "^1.70.0",
     "react": "^19.3.1",
@@ -25,14 +30,17 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.19.2",
+    "@types/express": "^5.0.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^9.2.1",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
     "typescript": "~6.0.3",
+    "tsx": "^4.20.6",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.6"
   }

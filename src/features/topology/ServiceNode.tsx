@@ -6,12 +6,13 @@ import { criticalityMeta, healthColor, layerMeta } from '@/lib/status'
 import type { Criticality, Health, TwinNode } from '@/types'
 import { TwinActions } from './actions'
 import { kindIcons } from './icons'
-import { NODE_SIZE } from './layout'
+import { NODE_SIZE, type NodeOrientation } from './layout'
 
 export interface ServiceFlags {
   /** Effective health: the reported status, or `impacted` when propagated from upstream. */
   health: Health
   criticality: Criticality
+  orientation: NodeOrientation
   /** Name of the failing upstream node that impacts this one, if any. */
   cause?: string
   dim: boolean
@@ -32,14 +33,18 @@ function CriticalityPips({ level }: { level: Criticality }) {
   return (
     <span className="flex shrink-0 items-end gap-px" title={`Criticidad ${label}`} aria-label={`Criticidad ${label}`}>
       {[1, 2, 3, 4].map((i) => (
-        <span key={i} className="w-[3px] rounded-[1px]" style={{ height: 3 + i * 2, background: i <= pips ? color : '#1e293b' }} />
+        <span
+          key={i}
+          className="w-[3px] rounded-[1px]"
+          style={{ height: 3 + i * 2, background: i <= pips ? color : 'var(--theme-connection)' }}
+        />
       ))}
     </span>
   )
 }
 
 function ServiceNodeComponent({ data }: NodeProps<ServiceNodeType>) {
-  const { node, health, criticality, cause, dim, selected, expandable, collapsed, hiddenCount } = data
+  const { node, health, criticality, orientation, cause, dim, selected, expandable, collapsed, hiddenCount } = data
   const { toggle } = useContext(TwinActions)
   const Icon = kindIcons[node.kind]
   const color = healthColor[health]
@@ -55,9 +60,11 @@ function ServiceNodeComponent({ data }: NodeProps<ServiceNodeType>) {
       style={{
         width: NODE_SIZE.w,
         height: NODE_SIZE.h,
-        borderColor: selected ? '#fff' : `${color}${impacted ? 'cc' : '99'}`,
+        borderColor: selected
+          ? 'var(--theme-primary)'
+          : `color-mix(in srgb, ${color} ${impacted ? 80 : 60}%, transparent)`,
         borderStyle: impacted ? 'dashed' : 'solid',
-        boxShadow: `0 0 ${selected ? 22 : impacted ? 20 : 14}px ${color}${selected ? '88' : impacted ? '66' : '44'}, inset 0 0 12px ${color}${impacted ? '33' : '1a'}`,
+        boxShadow: `0 0 ${selected ? 22 : impacted ? 20 : 14}px color-mix(in srgb, ${color} ${selected ? 53 : impacted ? 40 : 27}%, transparent), inset 0 0 12px color-mix(in srgb, ${color} ${impacted ? 20 : 10}%, transparent)`,
         opacity: dim ? 0.2 : health === 'offline' ? 0.55 : 1,
         transition: 'opacity .3s, border-color .6s, box-shadow .6s',
       }}
@@ -75,7 +82,7 @@ function ServiceNodeComponent({ data }: NodeProps<ServiceNodeType>) {
                 <span className="truncate">impactado{cause ? ` · ${cause}` : ''}</span>
               </>
             ) : (
-              <span className="text-cyan-300/70">auto</span>
+              <span className="text-neon/70">auto</span>
             )}
           </span>
         )}
@@ -101,10 +108,22 @@ function ServiceNodeComponent({ data }: NodeProps<ServiceNodeType>) {
         )}
         <span className="relative size-2.5 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
       </span>
-      <Handle id="in" type="target" position={Position.Top} isConnectable={false} />
-      <Handle id="out" type="source" position={Position.Bottom} isConnectable={false} />
-      <Handle id="dep-out" type="source" position={Position.Top} style={{ left: '30%' }} isConnectable={false} />
-      <Handle id="dep-in" type="target" position={Position.Top} style={{ left: '70%' }} isConnectable={false} />
+      <Handle id="in" type="target" position={orientation === 'horizontal' ? Position.Left : Position.Top} isConnectable={false} />
+      <Handle id="out" type="source" position={orientation === 'horizontal' ? Position.Right : Position.Bottom} isConnectable={false} />
+      <Handle
+        id="dep-out"
+        type="source"
+        position={orientation === 'horizontal' ? Position.Bottom : Position.Top}
+        style={{ left: '30%' }}
+        isConnectable={false}
+      />
+      <Handle
+        id="dep-in"
+        type="target"
+        position={orientation === 'horizontal' ? Position.Bottom : Position.Top}
+        style={{ left: '70%' }}
+        isConnectable={false}
+      />
     </motion.div>
   )
 }

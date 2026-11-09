@@ -15,6 +15,7 @@ export interface FlowEdgeData extends Record<string, unknown> {
   impact?: boolean
   /** Particles travel target -> source (impact flowing from a dependency to its dependents). */
   reverse?: boolean
+  emphasis?: boolean
 }
 
 export type FlowEdgeType = Edge<FlowEdgeData, 'flow'>
@@ -36,7 +37,17 @@ function FlowEdgeComponent({
   markerEnd,
   data,
 }: EdgeProps<FlowEdgeType>) {
-  const { kind = 'hosts', color = '#22d3ee', particles = 0, duration = 3, active = true, dim = false, impact = false, reverse = false } = data ?? {}
+  const {
+    kind = 'hosts',
+    color = 'var(--theme-primary)',
+    particles = 0,
+    duration = 3,
+    active = true,
+    dim = false,
+    impact = false,
+    reverse = false,
+    emphasis = false,
+  } = data ?? {}
   const depends = kind === 'depends'
   const path = depends
     ? dependencyPath(sourceX, sourceY, targetX, targetY)
@@ -50,8 +61,8 @@ function FlowEdgeComponent({
         markerEnd={markerEnd}
         style={{
           stroke: color,
-          strokeOpacity: impact ? 0.6 : depends ? 0.4 : 0.18,
-          strokeWidth: impact ? 4 : depends ? 1.5 : 3,
+          strokeOpacity: impact ? 0.6 : depends ? emphasis ? 0.8 : 0.4 : 0.18,
+          strokeWidth: impact ? 4 : depends ? emphasis ? 2.5 : 1.5 : 3,
           filter: impact ? `drop-shadow(0 0 4px ${color})` : undefined,
         }}
       />

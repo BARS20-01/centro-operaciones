@@ -27,7 +27,23 @@ const seedNodes: NodeInput[] = [
   ...['ING101', 'ING201', 'ING202', 'ING203', 'ING204', 'ACA001'].map((n, i) =>
     node(n.toLowerCase(), n, 'lab', 'labs', 'labscreen', 'low', i === 3 ? 'warn' : i === 4 ? 'offline' : 'ok'),
   ),
-]
+].map((n) => ({
+  ...n,
+  description:
+    {
+      proxmox: 'Plataforma de virtualización que aloja el entorno operacional.',
+      'vps-web': 'Núcleo del Digital Twin y punto de convergencia de la infraestructura.',
+      docker: 'Motor de contenedores que ejecuta servicios de la plataforma.',
+      coolify: 'Plataforma de despliegue y gestión de aplicaciones.',
+      grafana: 'Visualización de métricas y observabilidad de servicios.',
+      'uptime-kuma': 'Monitor de disponibilidad y estado de endpoints.',
+      postgres: 'Motor de base de datos relacional compartido por aplicaciones.',
+      sgs: 'Sistema de gestión institucional integrado al entorno operacional.',
+      wallboard: 'Panel de visualización operacional.',
+      labscreen: 'Punto de acceso a visualizaciones y servicios de laboratorio.',
+    }[n.id] ?? 'Laboratorio académico monitorizado por NEXUS PRIME.',
+  source: 'simulated' as const,
+}))
 
 const seedDependencies = [
   { from: 'sgs', to: 'postgres' },

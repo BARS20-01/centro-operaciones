@@ -3,6 +3,8 @@ import { MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Node } fro
 import { relatedSet } from '@/domain/analysis'
 import { CORE_ID } from '@/domain/graph'
 import { criticalityOf, HEALTH_LEVELS, type HealthReport } from '@/domain/health'
+import type { ViewModeId } from '@/features/dashboard/viewModes'
+import type { DataSource } from '@/integrations/types'
 import { LAYERS, healthColor } from '@/lib/status'
 import type { Health, Layer, Status, TwinGraph, TwinNode } from '@/types'
 import { TwinActions } from './actions'
@@ -10,7 +12,15 @@ import { ClusterNode, type ClusterNodeType } from './ClusterNode'
 import { CoreNode, type CoreNodeType } from './CoreNode'
 import { FlowEdge, type FlowEdgeType } from './FlowEdge'
 import { Inspector } from './Inspector'
-import { computeLayout, CORE_SIZE, NODE_SIZE } from './layout'
+import {
+  computeHomelabLayout,
+  computeKnowledgeLayout,
+  computeLayout,
+  computeOperationsLayout,
+  CORE_SIZE,
+  NODE_SIZE,
+  type NodeOrientation,
+} from './layout'
 import { ServiceNode, type ServiceData, type ServiceFlags, type ServiceNodeType } from './ServiceNode'
 import { Legend, Toolbar } from './Toolbar'
 import { useTwinView } from './useTwinView'
@@ -19,14 +29,14 @@ import { buildView } from './view'
 const nodeTypes = { core: CoreNode, service: ServiceNode, cluster: ClusterNode }
 const edgeTypes = { flow: FlowEdge }
 const FIT = { padding: 0.06 }
-const DEPENDENCY_COLOR = '#c084fc'
+const DEPENDENCY_COLOR = 'var(--theme-connection)'
 
 const sizeOf = (id: string) => (id === CORE_ID ? { w: CORE_SIZE, h: CORE_SIZE } : NODE_SIZE)
 
 // Stable data per node object + flags: unchanged nodes skip re-rendering.
 const dataCache = new WeakMap<TwinNode, { sig: string; data: ServiceData }>()
 function serviceData(node: TwinNode, flags: ServiceFlags): ServiceData {
-  const sig = `${flags.health}|${flags.criticality}|${flags.cause ?? ''}|${flags.dim}|${flags.selected}|${flags.expandable}|${flags.collapsed}|${flags.hiddenCount}`
+  const sig = `${flags.health}|${flags.criticality}|${flags.orientation}|${flags.cause ?? ''}|${flags.dim}|${flags.selected}|${flags.expandable}|${flags.collapsed}|${flags.hiddenCount}`
   const hit = dataCache.get(node)
   if (hit?.sig === sig) return hit.data
   const data = { node, ...flags }
@@ -37,7 +47,19 @@ function serviceData(node: TwinNode, flags: ServiceFlags): ServiceData {
 const CORE_STATUS: Record<string, Status> = { optimal: 'ok', healthy: 'ok', degraded: 'warn', 'at-risk': 'warn', critical: 'critical' }
 const isDown = (h: Health | undefined) => h === 'critical' || h === 'offline'
 
-function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
+type DockerSourceStatus = DataSource | 'checking' | 'unavailable'
+
+function Canvas({
+  graph,
+  report,
+  dockerSource,
+  mode,
+}: {
+  graph: TwinGraph
+  report: HealthReport
+  dockerSource: DockerSourceStatus
+  mode: ViewModeId
+}) {
   const ui = useTwinView(graph)
   const { fitView } = useReactFlow()
   const model = report.model
@@ -45,7 +67,14 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
   const related = useMemo(() => (ui.selectedId ? relatedSet(graph, ui.selectedId) : null), [graph, ui.selectedId])
   // Topology keeps its identity across status/metric ticks, so layout only reruns on structural change.
   const view = useMemo(() => buildView(graph.topology, ui.collapsed, ui.layers), [graph.topology, ui.collapsed, ui.layers])
-  const layout = useMemo(() => computeLayout(view, sizeOf), [view])
+  const operationHealth = mode === 'operations' ? model.health : EMPTY_HEALTH
+  const layout = useMemo(() => {
+    if (mode === 'obsidian') return computeKnowledgeLayout(view, graph.topology, sizeOf)
+    if (mode === 'homelab') return computeHomelabLayout(view, sizeOf)
+    if (mode === 'operations') return computeOperationsLayout(view, operationHealth, sizeOf)
+    return computeLayout(view, sizeOf)
+  }, [mode, view, graph.topology, operationHealth])
+  const orientation: NodeOrientation = mode === 'homelab' ? 'horizontal' : 'vertical'
 
   const counts = useMemo(() => {
     const c = Object.fromEntries(LAYERS.map((l) => [l, { total: 0, alerts: 0 }])) as Record<Layer, { total: number; alerts: number }>
@@ -68,7 +97,7 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
         position: { x: c.x, y: c.y },
         width: c.w,
         height: c.h,
-        data: { label: graph.nodes[c.parent].name, count: c.count },
+        data: { label: graph.nodes[c.parent].name, count: c.count, orientation },
         className: 'pointer-events-none',
         selectable: false,
         draggable: false,
@@ -99,7 +128,7 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
           position: { x: box.x, y: box.y },
           initialWidth: CORE_SIZE,
           initialHeight: CORE_SIZE,
-          data: { id, label: node.name, status: CORE_STATUS[level], levelLabel: HEALTH_LEVELS[level].label, ...flags },
+          data: { id, label: node.name, status: CORE_STATUS[level], levelLabel: HEALTH_LEVELS[level].label, orientation, ...flags },
           draggable: false,
           zIndex: 1,
         } satisfies CoreNodeType)
@@ -115,6 +144,7 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
             ...flags,
             health,
             criticality: criticalityOf(node),
+            orientation,
             selected: id === ui.selectedId,
             cause: cause ? graph.nodes[cause]?.name : undefined,
           }),
@@ -135,7 +165,7 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
           data: {
             kind: 'hosts',
             color: healthColor[health],
-            particles,
+            particles: mode === 'operations' ? Math.max(particles, 2) : particles,
             duration: health === 'critical' ? 1.4 : impacted ? 2 : 2.6 + (i % 3) * 0.5,
             active: health !== 'offline',
             dim: !!related && !(related.has(parent) && related.has(id)),
@@ -159,6 +189,7 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
     }
 
     for (const d of graph.dependencies) {
+      if (mode === 'homelab') continue
       if (!view.parent.has(d.from) || !view.parent.has(d.to)) continue
       const target = model.health.get(d.to)
       const down = isDown(target)
@@ -181,11 +212,12 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
           dim: !!related && !(related.has(d.from) && related.has(d.to)),
           impact: down || impacted,
           reverse: down || impacted,
+          emphasis: mode === 'obsidian',
         },
       })
     }
     return { nodes, edges }
-  }, [graph, model, report.nexus.level, view, layout, related, ui.selectedId])
+  }, [graph, model, report.nexus.level, view, layout, related, ui.selectedId, mode, orientation])
 
   // Until the user takes over the camera, keep the whole map framed as nodes are discovered.
   const nodeCount = nodes.length
@@ -198,7 +230,7 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
   useEffect(() => {
     const t = setTimeout(() => fitView({ ...FIT, duration: 500 }), 120)
     return () => clearTimeout(t)
-  }, [ui.fitToken, fitView])
+  }, [ui.fitToken, fitView, mode])
 
   const actions = useMemo(() => ({ toggle: ui.toggle }), [ui.toggle])
 
@@ -212,6 +244,7 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
             onToggleLayer={ui.toggleLayer}
             onExpandAll={ui.expandAll}
             onCollapseAll={ui.collapseAll}
+            dockerSource={dockerSource}
           />
         </div>
         <div className="relative min-h-0 flex-1">
@@ -237,7 +270,14 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
           <div className="pointer-events-none absolute inset-2 z-10 flex items-end justify-between gap-2">
             <Legend />
             {ui.selectedId && (
-              <Inspector graph={graph} id={ui.selectedId} model={model} onSelect={ui.select} onClose={() => ui.select(null)} />
+              <Inspector
+                graph={graph}
+                id={ui.selectedId}
+                model={model}
+                source={dockerSource}
+                onSelect={ui.select}
+                onClose={() => ui.select(null)}
+              />
             )}
           </div>
         </div>
@@ -246,10 +286,22 @@ function Canvas({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
   )
 }
 
-export function ServiceMap({ graph, report }: { graph: TwinGraph; report: HealthReport }) {
+const EMPTY_HEALTH: ReadonlyMap<string, Health> = new Map()
+
+export function ServiceMap({
+  graph,
+  report,
+  dockerSource,
+  mode,
+}: {
+  graph: TwinGraph
+  report: HealthReport
+  dockerSource: DockerSourceStatus
+  mode: ViewModeId
+}) {
   return (
     <ReactFlowProvider>
-      <Canvas graph={graph} report={report} />
+      <Canvas graph={graph} report={report} dockerSource={dockerSource} mode={mode} />
     </ReactFlowProvider>
   )
 }

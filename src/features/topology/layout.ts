@@ -1,4 +1,6 @@
 import type { TwinView } from './view'
+import { CORE_ID } from '@/domain/graph'
+import type { Health, Layer, Topology } from '@/types'
 
 export interface Size {
   w: number
@@ -20,6 +22,8 @@ export interface Layout {
   /** Nodes laid out inside a cluster; they connect through it, not individually. */
   clustered: Set<string>
 }
+
+export type NodeOrientation = 'vertical' | 'horizontal'
 
 export const NODE_SIZE: Size = { w: 176, h: 48 }
 export const CORE_SIZE = 300
@@ -46,6 +50,7 @@ export function computeLayout(view: TwinView, sizeOf: (id: string) => Size): Lay
     const k = kidsOf(id)
     return k.length >= GRID_MIN && k.every((c) => kidsOf(c).length === 0)
   }
+
   const gridWidth = (id: string) => {
     const k = kidsOf(id)
     const cols = colsFor(k.length)
@@ -131,4 +136,70 @@ export function computeLayout(view: TwinView, sizeOf: (id: string) => Size): Lay
   }
 
   return { boxes, clusters, clustered }
+}
+
+/** Knowledge-graph view: stable layer columns, with all hosting and dependency edges retained. */
+export function computeKnowledgeLayout(view: TwinView, topology: Topology, sizeOf: (id: string) => Size): Layout {
+  const layerOrder: Layer[] = ['infrastructure', 'services', 'applications', 'labs']
+  const byLayer = new Map(layerOrder.map((layer) => [layer, [] as string[]]))
+  for (const id of view.order) byLayer.get(topology.layers[id])?.push(id)
+
+  const boxes = new Map<string, Box>()
+  const columnGap = 260
+  const rowGap = 94
+  for (const layer of layerOrder) {
+    const ids = byLayer.get(layer)!
+    ids.sort((a, b) => {
+      if (a === CORE_ID) return -1
+      if (b === CORE_ID) return 1
+      return a.localeCompare(b)
+    })
+    ids.forEach((id, row) => {
+      const size = sizeOf(id)
+      boxes.set(id, { ...size, x: (layerOrder.indexOf(layer) - 1.5) * columnGap, y: row * rowGap })
+    })
+  }
+  return { boxes, clusters: [], clustered: new Set() }
+}
+
+/** Physical hosting view: rotate the hierarchical layout to flow from host to guest. */
+export function computeHomelabLayout(view: TwinView, sizeOf: (id: string) => Size): Layout {
+  const swappedSize = (id: string) => {
+    const size = sizeOf(id)
+    return { w: size.h, h: size.w }
+  }
+  const tree = computeLayout(view, swappedSize)
+  return {
+    boxes: new Map([...tree.boxes].map(([id, box]) => [id, { w: box.h, h: box.w, x: box.y, y: box.x }])),
+    clusters: tree.clusters.map((box) => ({ ...box, x: box.y, y: box.x, w: box.h, h: box.w })),
+    clustered: tree.clustered,
+  }
+}
+
+/** Operations view: compact severity-sorted matrix around the shared Digital Core. */
+export function computeOperationsLayout(view: TwinView, health: ReadonlyMap<string, Health>, sizeOf: (id: string) => Size): Layout {
+  const priority: Record<Health, number> = { critical: 0, offline: 1, impacted: 2, warn: 3, ok: 4 }
+  const ids = view.order.filter((id) => id !== CORE_ID)
+  ids.sort((a, b) => (priority[health.get(a) ?? 'ok'] - priority[health.get(b) ?? 'ok']) || a.localeCompare(b))
+
+  const columns = Math.max(1, Math.ceil(Math.sqrt(ids.length)))
+  const size = ids.length ? sizeOf(ids[0]) : NODE_SIZE
+  const gapX = 28
+  const gapY = 20
+  const gridWidth = Math.max(sizeOf(CORE_ID).w, columns * size.w + Math.max(0, columns - 1) * gapX)
+  const boxes = new Map<string, Box>()
+  const coreSize = sizeOf(CORE_ID)
+  boxes.set(CORE_ID, { ...coreSize, x: gridWidth / 2, y: coreSize.h / 2 })
+
+  ids.forEach((id, index) => {
+    const nodeSize = sizeOf(id)
+    const row = Math.floor(index / columns)
+    const col = index % columns
+    boxes.set(id, {
+      ...nodeSize,
+      x: col * (size.w + gapX) + nodeSize.w / 2,
+      y: coreSize.h + 118 + row * (size.h + gapY),
+    })
+  })
+  return { boxes, clusters: [], clustered: new Set() }
 }

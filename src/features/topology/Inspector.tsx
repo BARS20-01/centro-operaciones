@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { affectedBy, depIndex, hostPath } from '@/domain/analysis'
 import { criticalityOf, relationBetween, rootCauses, type HealthModel } from '@/domain/health'
 import { formatBytes, formatUptime } from '@/integrations/docker.integration'
+import type { DataSource } from '@/integrations/types'
 import { criticalityMeta, healthColor, healthLabel, layerMeta } from '@/lib/status'
 import type { TwinGraph } from '@/types'
 
@@ -10,6 +11,7 @@ interface Props {
   graph: TwinGraph
   id: string
   model: HealthModel
+  source: DataSource | 'checking' | 'unavailable'
   onSelect: (id: string) => void
   onClose: () => void
 }
@@ -23,7 +25,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-export function Inspector({ graph, id, model, onSelect, onClose }: Props) {
+export function Inspector({ graph, id, model, source, onSelect, onClose }: Props) {
   const node = graph.nodes[id]
   const idx = useMemo(() => depIndex(graph), [graph])
   const causes = useMemo(() => (graph.nodes[id] ? rootCauses(graph, id) : []), [graph, id])
@@ -41,6 +43,8 @@ export function Inspector({ graph, id, model, onSelect, onClose }: Props) {
   const crit = criticalityMeta[criticalityOf(node)]
   const failing = node.status === 'critical' || node.status === 'offline'
   const name = (n: string) => graph.nodes[n]?.name ?? n
+  const dataSource = node.source ?? (node.origin === 'discovered' && source === 'live' ? 'live' : 'simulated')
+  const entitiesAffected = blast
 
   const chips = (ids: string[]) =>
     ids.length === 0 ? (
@@ -69,7 +73,7 @@ export function Inspector({ graph, id, model, onSelect, onClose }: Props) {
             <span style={{ color: healthColor[health] }}>● {healthLabel[health]}</span>
             <span style={{ color: layerMeta[node.layer].color }}>{layerMeta[node.layer].label}</span>
             <span style={{ color: crit.color }}>{crit.label}</span>
-            {node.origin === 'discovered' && <span className="text-cyan-300/70">auto</span>}
+            {node.origin === 'discovered' && <span className="text-neon/70">auto</span>}
           </div>
         </div>
         <button onClick={onClose} aria-label="Cerrar" className="text-slate-400 hover:text-white">
@@ -84,7 +88,14 @@ export function Inspector({ graph, id, model, onSelect, onClose }: Props) {
               Impactado por
             </div>
             {causes.map((c) => (
-              <div key={c.id} className="rounded border border-[#fb923c]/40 bg-[#fb923c]/10 px-2 py-1">
+              <div
+                key={c.id}
+                className="rounded border px-2 py-1"
+                style={{
+                  borderColor: 'color-mix(in srgb, var(--theme-secondary) 40%, transparent)',
+                  backgroundColor: 'color-mix(in srgb, var(--theme-secondary) 10%, transparent)',
+                }}
+              >
                 <button onClick={() => onSelect(c.id)} className="font-semibold text-danger hover:underline">
                   {name(c.id)} · {healthLabel[graph.nodes[c.id].status]}
                 </button>
@@ -109,14 +120,16 @@ export function Inspector({ graph, id, model, onSelect, onClose }: Props) {
         )}
       </Row>
       {blast.length > 0 && (
-        <Row label={`Impacto (${blast.length})`}>
+        <Row label={`Entidades afectadas (${entitiesAffected.length})`}>
           <span className="flex flex-wrap gap-1">
             {blast.slice(0, 12).map((n) => (
               <button
                 key={n}
                 onClick={() => onSelect(n)}
                 className="rounded border px-1.5 py-0.5 text-slate-200 hover:bg-white/10"
-                style={{ borderColor: `${healthColor[model.health.get(n) ?? 'impacted']}88` }}
+                style={{
+                  borderColor: `color-mix(in srgb, ${healthColor[model.health.get(n) ?? 'impacted']} 53%, transparent)`,
+                }}
               >
                 {name(n)}
               </button>
@@ -143,11 +156,71 @@ export function Inspector({ graph, id, model, onSelect, onClose }: Props) {
           <div className="mt-0.5 text-[9px] text-slate-500">{formatBytes(node.metrics.memBytes)} en uso</div>
         </Row>
       )}
-      <Row label="Ruta de hosting">
-        <span className="text-slate-300">{path.map((p) => p.name).join(' › ')}</span>
+      {node.image && (
+        <Row label="Imagen Docker">
+          <span className="break-all text-slate-300">{node.image}</span>
+        </Row>
+      )}
+      {node.ports && (
+        <Row label="Puertos">
+          <span className="text-slate-300">{node.ports.length ? node.ports.join(', ') : 'Sin puertos publicados'}</span>
+        </Row>
+      )}
+      {node.networks && (
+        <Row label="Redes">
+          <span className="text-slate-300">{node.networks.length ? node.networks.join(', ') : 'Sin redes asignadas'}</span>
+        </Row>
+      )}
+      {node.startedAt && (
+        <Row label="Fecha de inicio">
+          <time className="text-slate-300">{node.startedAt}</time>
+        </Row>
+      )}
+      <Row label="Descripción">
+        <span className="text-slate-300">{node.description ?? 'Descripción no disponible.'}</span>
       </Row>
-      <Row label="Depende de">{chips(uses)}</Row>
-      <Row label="Usado por">{chips(usedBy)}</Row>
+      <Row label="Categoría">
+        <span className="text-slate-300">
+          {node.category ?? layerMeta[node.layer].label}
+        </span>
+      </Row>
+      <Row label="Criticidad">
+        <span style={{ color: crit.color }}>{crit.label}</span>
+      </Row>
+      <Row label="Dependencias">
+        <div className="space-y-1">
+          <div>Depende de: {chips(uses)}</div>
+          <div>Usado por: {chips(usedBy)}</div>
+          <div>
+            Ruta: <span className="text-slate-300">{path.map((p) => p.name).join(' › ')}</span>
+          </div>
+        </div>
+      </Row>
+      {!blast.length && <Row label={`Entidades afectadas (${entitiesAffected.length})`}>{chips(entitiesAffected)}</Row>}
+      <Row label="Repositorio Git">
+        {node.repositoryUrl ? (
+          <a className="text-neon hover:underline" href={node.repositoryUrl} target="_blank" rel="noreferrer">
+            {node.repositoryUrl}
+          </a>
+        ) : (
+          <span className="text-slate-500">No vinculado</span>
+        )}
+      </Row>
+      <Row label="Última actualización">
+        <span className="text-slate-300">
+          {node.updatedAt ? new Date(node.updatedAt).toLocaleString() : 'No disponible'}
+        </span>
+      </Row>
+      <Row label="Estado operacional">
+        <span className="font-semibold" style={{ color: healthColor[health] }}>
+          {healthLabel[health]}
+        </span>
+      </Row>
+      <Row label="Fuente">
+        <span className="font-semibold" style={{ color: dataSource === 'live' ? 'var(--theme-success)' : 'var(--theme-warning)' }}>
+          {dataSource === 'live' ? 'LIVE' : 'SIMULATED'}
+        </span>
+      </Row>
       <Row label={`Aloja (${hosted.length})`}>{chips(hosted)}</Row>
     </aside>
   )
