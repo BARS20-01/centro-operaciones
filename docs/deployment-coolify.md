@@ -133,7 +133,7 @@ Define las variables interpoladas por el Compose en la configuración de variabl
 | `COOLIFY_API_KEY` | API, runtime | Opcional. Token de Coolify del equipo objetivo con permiso **read**; guardar como secreto en Coolify. No usar `VITE_`, `read:sensitive`, `write`, `deploy` ni `root`. |
 | `COOLIFY_ALLOW_INSECURE_HTTP` | API, runtime | `false` por defecto. Solo el valor exacto `true` permite HTTP y acepta que la clave y los datos viajen sin cifrar. |
 | `COOLIFY_DIAGNOSTICS_LOG` | API, runtime | `false` por defecto. `true` registra temporalmente cada respuesta HTTP de Coolify, con endpoint, estado y duración; nunca la clave ni el cuerpo. |
-| `PROXMOX_URL` | API, runtime | Origen HTTPS de Proxmox VE, por ejemplo `https://proxmox.example:8006`, sin rutas, credenciales ni parámetros. El certificado y su nombre deben ser confiables para Node en el contenedor. |
+| `PROXMOX_URL` | API, runtime | Para VPS-WEB configurar `https://proxmox.unab.ccp:8006` en Coolify, sin rutas, credenciales ni parámetros. El nombre debe coincidir con un SAN del certificado. |
 | `PROXMOX_API_TOKEN` | API, runtime | Secreto con formato `usuario@realm!tokenid=secreto`, sin el prefijo `PVEAPIToken=`. Solo backend; no usar variables `VITE_`. |
 | `PROXMOX_MODE` | API, runtime | `live` por defecto; `simulated` desactiva consultas reales y entrega un inventario vacío identificado explícitamente como simulado. No es un fallback automático. |
 | `PROXMOX_DIAGNOSTICS_LOG` | API, runtime | `false` por defecto. `true` habilita temporalmente trazas de requests, respuestas, parsing y descubrimiento sin valores de inventario ni credenciales. |
@@ -146,6 +146,8 @@ Las variables `VITE_*` se consumen como argumentos de build; un cambio requiere 
 #### CA y TLS en VPS-WEB
 
 El Compose monta `PROXMOX_CA_PATH` como archivo de solo lectura en `/run/nexus-prime/proxmox-ca.pem` y configura `NODE_EXTRA_CA_CERTS` para Node. **El montaje es obligatorio para este Compose, incluso si Proxmox está desactivado:** crea el archivo antes de desplegar; si falta, el contenedor API no arrancará. Si no se usa una CA adicional en otra instalación, proporciona allí un PEM de CA confiable apropiado o adapta el Compose de esa instalación. Node debe poder leerlo como usuario no root. La CA se agrega a la confianza de todo el proceso Node, no solo a Proxmox.
+
+En VPS-WEB, `extra_hosts` resuelve `proxmox.unab.ccp` a `10.91.32.30` únicamente dentro de la API. Cambia en Coolify la variable existente `PROXMOX_URL` a `https://proxmox.unab.ccp:8006`: el Compose recibe su valor del recurso Coolify y no actualiza la configuración remota por sí solo. La entrada es estática; si cambia la IP o la instancia, actualízala después de verificar la identidad del destino y el SAN del certificado. No es un registro DNS global.
 
 1. Identifica el certificado servido por Proxmox y su CA. Si usa el certificado predeterminado de Proxmox VE, la CA pública es `/etc/pve/pve-root-ca.pem`; si usa un certificado personalizado o ACME, utiliza la CA emisora real y asegúrate de que el servidor entregue los intermediarios necesarios. No copies claves privadas. En el nodo Proxmox, obtiene la huella de la CA por un canal administrativo confiable:
 
@@ -182,10 +184,11 @@ El Compose monta `PROXMOX_CA_PATH` como archivo de solo lectura en `/run/nexus-p
 5. Dentro de `nexus-prime-api`, verifica primero sin enviar token:
 
    ```sh
+   node -e "require('node:dns').lookup('proxmox.unab.ccp',(e,a)=>{if(e){console.error(e.code);process.exitCode=1}else console.log('IP',a)})"
    node -e "fetch(new URL('/api2/json/version', process.env.PROXMOX_URL), {redirect:'manual',signal:AbortSignal.timeout(15000)}).then(r=>console.log('HTTP',r.status)).catch(e=>{console.error('TLS/transport error:',e.name,e.cause?.code ?? 'unknown');process.exitCode=1})"
    ```
 
-   Solo si devuelve `200` o `401`, comprueba la autenticación sin imprimir el token ni el cuerpo:
+   Confirma que la IP sea `10.91.32.30`. Solo si la petición HTTPS devuelve `200` o `401`, comprueba la autenticación sin imprimir el token ni el cuerpo:
 
    ```sh
    set +x
