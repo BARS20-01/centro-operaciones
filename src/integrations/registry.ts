@@ -1,5 +1,6 @@
 import { dockerIntegration } from './docker.integration'
 import { coolifyIntegration } from './coolify.integration'
+import { proxmoxIntegration } from './proxmox.integration'
 import type { Integration, IntegrationId } from './types'
 
 const placeholder = (
@@ -17,7 +18,7 @@ const placeholder = (
 })
 
 export const integrations: Record<IntegrationId, Integration> = {
-  proxmox: placeholder('proxmox', 'Proxmox VE', 'Hipervisor y VMs', 'infrastructure'),
+  proxmox: proxmoxIntegration,
   docker: dockerIntegration,
   coolify: coolifyIntegration,
   sgs: placeholder('sgs', 'SGS', 'Sistema de gestión', 'applications'),

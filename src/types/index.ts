@@ -48,7 +48,7 @@ export interface TwinNode {
   repositoryUrl?: string
   updatedAt?: string
   source?: 'live' | 'simulated'
-  sourceSystem?: 'docker' | 'coolify'
+  sourceSystem?: 'docker' | 'coolify' | 'proxmox'
   stale?: boolean
   projectName?: string
   environmentName?: string
@@ -60,6 +60,7 @@ export interface TwinNode {
   ports?: string[]
   networks?: string[]
   startedAt?: string
+  diskPercent?: number
   metrics?: NodeMetrics
 }
 

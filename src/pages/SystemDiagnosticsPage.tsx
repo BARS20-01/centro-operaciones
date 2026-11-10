@@ -4,6 +4,7 @@ import { createInitialSnapshot } from '@/data/mock'
 import { mergeDiscovery } from '@/domain/graph'
 import { createDockerIntegration, httpTransport } from '@/integrations/docker.integration'
 import { fetchCoolifySnapshot, type CoolifySnapshot } from '@/integrations/coolify.integration'
+import { fetchProxmoxHealth, fetchProxmoxSnapshot, type ProxmoxSnapshot } from '@/integrations/proxmox.integration'
 
 const apiPath = import.meta.env.DEV ? '/diagnostics-api' : '/api'
 
@@ -80,9 +81,32 @@ export default function SystemDiagnosticsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [coolify, setCoolify] = useState<CoolifySnapshot | null>(null)
   const [coolifyStatus, setCoolifyStatus] = useState<'checking' | 'live' | 'unavailable'>('checking')
+  const [proxmox, setProxmox] = useState<ProxmoxSnapshot | null>(null)
+  const [proxmoxStatus, setProxmoxStatus] = useState<'checking' | 'live' | 'simulated' | 'unavailable'>('checking')
+  const [proxmoxApiStatus, setProxmoxApiStatus] = useState<'checking' | 'live' | 'simulated' | 'unavailable'>('checking')
   const [diagnosticsDocker] = useState(() => createDockerIntegration({
     transport: httpTransport(`${apiPath}/docker/containers`, `${apiPath}/docker/stats`),
   }))
+
+  useEffect(() => {
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout>
+    const controller = new AbortController()
+    const check = async () => {
+      const [health, discovery] = await Promise.allSettled([
+        fetchProxmoxHealth(controller.signal, apiPath),
+        fetchProxmoxSnapshot(controller.signal, apiPath),
+      ])
+      if (disposed) return
+      if (health.status === 'fulfilled') setProxmoxApiStatus(health.value)
+      else { setProxmoxApiStatus('unavailable'); console.warn('Proxmox API health unavailable') }
+      if (discovery.status === 'fulfilled') { setProxmox(discovery.value); setProxmoxStatus(discovery.value.source) }
+      else { setProxmoxStatus('unavailable'); console.warn('Proxmox diagnostics unavailable') }
+      if (!disposed) timer = setTimeout(check, 30_000)
+    }
+    void check()
+    return () => { disposed = true; controller.abort(); clearTimeout(timer) }
+  }, [refreshKey])
 
   useEffect(() => {
     let disposed = false
@@ -275,6 +299,25 @@ export default function SystemDiagnosticsPage() {
             <Metric label="Discovery Timestamp" value={coolifyStatus === 'live' ? formatTime(coolify?.checkedAt ?? null) : '—'} />
           </div>
           <p className="mt-3 text-xs text-slate-400">Sin conexión no se fabrican recursos Coolify; la fuente no está validada como LIVE. Los despliegues contados son únicamente los activos que devuelve la API.</p>
+        </section>
+
+        <section className="hud-panel rounded-lg px-4 py-3" aria-label="Proxmox Diagnostics">
+          <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-neon">Proxmox Diagnostics</h3>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Metric label="API Status" value={proxmoxApiStatus === 'live' ? 'OK' : proxmoxApiStatus === 'simulated' ? 'SIMULATED' : proxmoxApiStatus === 'checking' ? 'CHECKING' : 'UNAVAILABLE'} />
+            <Metric label="Proxmox Source" value={proxmoxStatus.toUpperCase()} />
+            <Metric label="Inventory Status" value={proxmoxStatus !== 'live' ? '—' : (proxmox?.snapshotErrors || proxmox?.backupErrors) ? 'INCOMPLETO' : 'CONSULTADO'} />
+            <Metric label="VM Count" value={proxmoxStatus === 'live' ? String(proxmox?.resources.filter((r) => r.type === 'qemu').length ?? 0) : '—'} />
+            <Metric label="LXC Count" value={proxmoxStatus === 'live' ? String(proxmox?.resources.filter((r) => r.type === 'lxc').length ?? 0) : '—'} />
+            <Metric label="Storage Count" value={proxmoxStatus === 'live' ? String(proxmox?.resources.filter((r) => r.type === 'storage').length ?? 0) : '—'} />
+            <Metric label="Node Status" value={proxmoxStatus === 'live' ? `${proxmox?.resources.filter((r) => r.type === 'node' && r.status === 'online').length ?? 0} online / ${proxmox?.resources.filter((r) => r.type === 'node').length ?? 0}` : '—'} />
+            <Metric label="Snapshots" value={proxmoxStatus === 'live' ? `${proxmox?.snapshots.length ?? 0}${proxmox?.snapshotErrors ? ' · INCOMPLETO' : ''}` : '—'} />
+            <Metric label="Backups (por nodo/storage)" value={proxmoxStatus === 'live' ? `${proxmox?.backups.length ?? 0}${proxmox?.backupErrors ? ' · INCOMPLETO' : ''}` : '—'} />
+            <Metric label="Last Sync" value={proxmoxStatus === 'live' ? formatTime(proxmox?.checkedAt ?? null) : '—'} />
+            <Metric label="VPS-WEB VM 200" value={proxmoxStatus === 'live' ? (proxmox?.resources.some((r) => r.type === 'qemu' && r.vmid === 200 && r.node === 'proxmox') && proxmox.resources.some((r) => r.type === 'node' && r.node === 'proxmox') ? 'ENCONTRADA' : 'NO VINCULADA') : '—'} />
+            <Metric label="GLPI VM 100" value={proxmoxStatus === 'live' ? proxmox?.resources.find((r) => r.type === 'qemu' && r.vmid === 100)?.status ?? 'NO VISIBLE' : '—'} />
+          </div>
+          <p className="mt-3 text-xs text-slate-400">En modo SIMULATED no se consulta Proxmox ni se fabrica inventario. Inventario LIVE limitado al alcance autorizado. VM 100 apagada no participa en la topología operativa. Los backups de storages compartidos pueden contarse por cada nodo. Las consultas fallidas producen inventarios incompletos, no cero confirmado.</p>
         </section>
 
         <p className="text-[11px] leading-relaxed text-slate-500">

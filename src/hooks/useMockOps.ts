@@ -170,6 +170,8 @@ export function useMockOps() {
     let discovery: ReturnType<typeof setTimeout>
     let coolifyTimer: ReturnType<typeof setTimeout>
     let coolifyFailed = false
+    let proxmoxTimer: ReturnType<typeof setTimeout>
+    let proxmoxFailed = false
     const poll = async () => {
       const source = integrations.docker
       if (!source.discover) return
@@ -266,6 +268,57 @@ export function useMockOps() {
     }
     void pollCoolify()
 
+    const pollProxmox = async () => {
+      try {
+        const result = await integrations.proxmox.discover!()
+        if (disposed) return
+        const recovered = proxmoxFailed
+        proxmoxFailed = false
+        setState((prev) => {
+          const ids = new Set((result.nodes ?? []).map((node) => node.id))
+          const retained = Object.values(prev.snapshot.graph.nodes)
+            .filter((node) => node.sourceSystem === 'proxmox' && !ids.has(node.id) && !(result.removed ?? []).includes(node.id))
+            .map((node) => ({ ...node, stale: true, status: 'warn' as const }))
+          const report = mergeDiscovery(prev.snapshot.graph, { ...result, nodes: [...(result.nodes ?? []), ...retained] })
+          if (report.rejected.length) console.warn('Proxmox graph discovery rejected entries:', report.rejected.length)
+          if (report.graph === prev.snapshot.graph) return prev
+          const events: OpsEvent[] = []
+          if (recovered) events.push(mkEvent({ source: 'Proxmox', severity: 'success', category: 'infrastructure', message: 'Sincronización Proxmox recuperada' }))
+          for (const node of report.added) {
+            events.push(mkEvent({ source: 'Proxmox', severity: 'info', category: 'infrastructure', message: `Recurso detectado: ${node.name}` }))
+          }
+          for (const id of report.removed) {
+            events.push(mkEvent({ source: 'Proxmox', severity: 'warn', category: 'infrastructure', message: `Recurso ya no visible: ${prev.snapshot.graph.nodes[id]?.name ?? id}` }))
+          }
+          for (const node of result.nodes ?? []) {
+            const old = prev.snapshot.graph.nodes[node.id]
+            if (old?.sourceSystem === 'proxmox' && old.status !== node.status) {
+              events.push(transitionEvent({ ...old, ...node }, old.status, node.status))
+            }
+          }
+          const kpis = prev.snapshot.kpis.map((k) => k.id === 'services' ? servicesKpi(report.graph, k) : k)
+          const next = { ...prev, snapshot: { graph: report.graph, kpis } }
+          return events.length ? withEvents(next, ...events) : settle(next)
+        })
+      } catch {
+        if (disposed) return
+        if (!proxmoxFailed) {
+          proxmoxFailed = true
+          console.warn('Proxmox discovery unavailable')
+          setState((prev) => {
+            const nodes = Object.values(prev.snapshot.graph.nodes)
+              .filter((node) => node.sourceSystem === 'proxmox')
+              .map((node) => ({ ...node, stale: true, status: node.id === 'proxmox' ? 'warn' as const : node.status }))
+            const report = mergeDiscovery(prev.snapshot.graph, { nodes })
+            return withEvents({ ...prev, snapshot: { ...prev.snapshot, graph: report.graph } },
+              mkEvent({ source: 'Proxmox', severity: 'warn', category: 'infrastructure', message: 'Error de sincronización Proxmox' }))
+          })
+        }
+      }
+      if (!disposed) proxmoxTimer = setTimeout(pollProxmox, 30_000)
+    }
+    void pollProxmox()
+
     return () => {
       disposed = true
       clearInterval(metrics)
@@ -274,6 +327,7 @@ export function useMockOps() {
       clearInterval(incidents)
       clearTimeout(discovery)
       clearTimeout(coolifyTimer)
+      clearTimeout(proxmoxTimer)
     }
   }, [])
 

@@ -156,6 +156,7 @@ export function Inspector({ graph, id, model, source, onSelect, onClose }: Props
           <div className="mt-0.5 text-[9px] text-slate-500">{formatBytes(node.metrics.memBytes)} en uso</div>
         </Row>
       )}
+      {node.diskPercent !== undefined && <Row label="Disco"><span className="text-slate-300">{node.diskPercent}% en uso</span></Row>}
       {node.image && (
         <Row label="Imagen Docker">
           <span className="break-all text-slate-300">{node.image}</span>

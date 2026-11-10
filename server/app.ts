@@ -1,6 +1,7 @@
 import express from 'express'
 import { containerStats, dockerServerVersion, listContainers, type Container, type DockerCommand } from './docker.js'
 import { CoolifyError, createCoolifyTransport, type CoolifySnapshot, type CoolifyTransport } from './coolify.js'
+import { ProxmoxError, createProxmoxTransport, createSimulatedProxmoxTransport, type ProxmoxSnapshot, type ProxmoxTransport } from './proxmox.js'
 
 export type DiagnosticStatus = 'OK' | 'WARN' | 'ERROR'
 
@@ -12,7 +13,7 @@ export interface SystemDiagnostics {
   discoveryStatus: DiagnosticStatus
 }
 
-export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTransport) {
+export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTransport, proxmoxTransport?: ProxmoxTransport) {
   const app = express()
   app.disable('x-powered-by')
   let pendingCollection: Promise<Container[]> | undefined
@@ -50,6 +51,39 @@ export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTranspo
     }
     return pendingCoolify
   }
+  let proxmox = proxmoxTransport
+  let proxmoxConfigurationError = false
+  const proxmoxMode = process.env.PROXMOX_MODE ?? 'live'
+  if (!proxmox && proxmoxMode === 'simulated') {
+    proxmox = createSimulatedProxmoxTransport()
+  } else if (!proxmox && proxmoxMode !== 'live') {
+    proxmoxConfigurationError = true
+    console.error('Proxmox configuration is invalid: PROXMOX_MODE must be live or simulated')
+  } else if (!proxmox && (process.env.PROXMOX_URL || process.env.PROXMOX_API_TOKEN)) {
+    try {
+      proxmox = createProxmoxTransport(process.env.PROXMOX_URL ?? '', process.env.PROXMOX_API_TOKEN ?? '', fetch, {
+        diagnosticLogs: process.env.PROXMOX_DIAGNOSTICS_LOG === 'true',
+      })
+    } catch {
+      proxmoxConfigurationError = true
+      console.error('Proxmox configuration is invalid: require an HTTPS URL and API token')
+    }
+  }
+  let pendingProxmox: Promise<ProxmoxSnapshot> | undefined
+  let cachedProxmox: ProxmoxSnapshot | undefined
+  let proxmoxCachedAt = 0
+  const collectProxmox = () => {
+    if (!proxmox) return Promise.reject(new ProxmoxError('INVALID_CONFIGURATION'))
+    if (cachedProxmox && Date.now() - proxmoxCachedAt < 30_000) return Promise.resolve(cachedProxmox)
+    if (!pendingProxmox) {
+      pendingProxmox = proxmox.discover().then((snapshot) => {
+        cachedProxmox = snapshot
+        proxmoxCachedAt = Date.now()
+        return snapshot
+      }).finally(() => { pendingProxmox = undefined })
+    }
+    return pendingProxmox
+  }
   const collect = () => {
     if (!pendingCollection) {
       pendingCollection = listContainers(run).finally(() => {
@@ -83,6 +117,25 @@ export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTranspo
         console.error('Coolify discovery unavailable: unexpected error')
       }
       res.status(503).json({ error: 'Coolify discovery unavailable' })
+    }
+  })
+  app.get('/api/proxmox/discovery', async (_req, res) => {
+    try {
+      res.json(await collectProxmox())
+    } catch (error) {
+      const code = error instanceof ProxmoxError ? error.code : 'UNEXPECTED_ERROR'
+      console.error(`Proxmox discovery unavailable: ${!proxmox && !proxmoxConfigurationError ? 'NOT_CONFIGURED' : code}`)
+      res.status(503).json({ error: 'Proxmox discovery unavailable' })
+    }
+  })
+  app.get('/api/proxmox/health', async (_req, res) => {
+    try {
+      if (!proxmox) throw new ProxmoxError('INVALID_CONFIGURATION')
+      res.json({ status: 'OK', ...await proxmox.health() })
+    } catch (error) {
+      const code = error instanceof ProxmoxError ? error.code : 'UNEXPECTED_ERROR'
+      console.error(`Proxmox health unavailable: ${!proxmox && !proxmoxConfigurationError ? 'NOT_CONFIGURED' : code}`)
+      res.status(503).json({ status: 'ERROR', error: 'Proxmox health unavailable' })
     }
   })
   app.get('/api/diagnostics', async (_req, res) => {

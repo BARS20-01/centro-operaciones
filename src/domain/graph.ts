@@ -79,6 +79,7 @@ const sameNode = (a: TwinNode, b: TwinNode) =>
   a.deploymentTime === b.deploymentTime &&
   a.image === b.image &&
   a.startedAt === b.startedAt &&
+  a.diskPercent === b.diskPercent &&
   sameStrings(a.ports, b.ports) &&
   sameStrings(a.networks, b.networks) &&
   sameMetrics(a.metrics, b.metrics)
