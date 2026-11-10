@@ -1,6 +1,6 @@
 import express from 'express'
 import { containerStats, dockerServerVersion, listContainers, type Container, type DockerCommand } from './docker.js'
-import { createCoolifyTransport, type CoolifySnapshot, type CoolifyTransport } from './coolify.js'
+import { CoolifyError, createCoolifyTransport, type CoolifySnapshot, type CoolifyTransport } from './coolify.js'
 
 export type DiagnosticStatus = 'OK' | 'WARN' | 'ERROR'
 
@@ -21,17 +21,23 @@ export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTranspo
   let coolifyConfigurationError = false
   if (!coolify && (process.env.COOLIFY_URL || process.env.COOLIFY_API_KEY)) {
     try {
-      coolify = createCoolifyTransport(process.env.COOLIFY_URL ?? '', process.env.COOLIFY_API_KEY ?? '')
+      const url = process.env.COOLIFY_URL ?? ''
+      coolify = createCoolifyTransport(url, process.env.COOLIFY_API_KEY ?? '', fetch, {
+        allowInsecureHttp: process.env.COOLIFY_ALLOW_INSECURE_HTTP === 'true',
+      })
+      if (new URL(url).protocol === 'http:') {
+        console.warn('Coolify HTTP enabled: API credentials and traffic are unencrypted; use a trusted isolated network')
+      }
     } catch {
       coolifyConfigurationError = true
-      console.error('Coolify configuration is invalid')
+      console.error('Coolify configuration is invalid: require a valid URL and API key; HTTP requires COOLIFY_ALLOW_INSECURE_HTTP=true')
     }
   }
   let pendingCoolify: Promise<CoolifySnapshot> | undefined
   let cachedCoolify: CoolifySnapshot | undefined
   let cachedAt = 0
   const collectCoolify = () => {
-    if (!coolify) return Promise.reject(new Error(coolifyConfigurationError ? 'Invalid configuration' : 'Not configured'))
+    if (!coolify) return Promise.reject(new CoolifyError(coolifyConfigurationError ? 'INVALID_CONFIGURATION' : 'NOT_CONFIGURED'))
     const cacheMs = cachedCoolify ? Math.max(30_000, (cachedCoolify.projects.length + 3) * 600) : 30_000
     if (cachedCoolify && Date.now() - cachedAt < cacheMs) return Promise.resolve(cachedCoolify)
     if (!pendingCoolify) {
@@ -69,8 +75,12 @@ export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTranspo
   app.get('/api/coolify/discovery', async (_req, res) => {
     try {
       res.json(await collectCoolify())
-    } catch {
-      console.error('Coolify discovery unavailable')
+    } catch (error) {
+      if (error instanceof CoolifyError) {
+        console.error(`Coolify discovery unavailable: ${error.code}${error.upstreamStatus ? ` (${error.upstreamStatus})` : ''}`)
+      } else {
+        console.error('Coolify discovery unavailable: unexpected error')
+      }
       res.status(503).json({ error: 'Coolify discovery unavailable' })
     }
   })

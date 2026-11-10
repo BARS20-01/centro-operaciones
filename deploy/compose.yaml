@@ -34,6 +34,7 @@ services:
       DOCKER_HOST: tcp://nexus-prime-docker-proxy:2375
       COOLIFY_URL: ${COOLIFY_URL:-}
       COOLIFY_API_KEY: ${COOLIFY_API_KEY:-}
+      COOLIFY_ALLOW_INSECURE_HTTP: ${COOLIFY_ALLOW_INSECURE_HTTP:-false}
     expose:
       - "3001"
     depends_on:

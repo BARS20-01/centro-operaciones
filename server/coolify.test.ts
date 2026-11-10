@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { test } from 'node:test'
 import { createApp } from './app.js'
 import { createCoolifyTransport } from './coolify.js'
@@ -46,10 +47,39 @@ test('Coolify transport reads only allowlisted fields and does not expose secret
 })
 
 test('Coolify transport fails closed on malformed or incomplete responses', async () => {
-  assert.throws(() => createCoolifyTransport('http://coolify.example.test', secret), /HTTPS/)
-  assert.throws(() => createCoolifyTransport('https://user:password@example.test', secret), /HTTPS/)
+  assert.throws(() => createCoolifyTransport('http://coolify.example.test', secret), /INVALID_CONFIGURATION/)
+  assert.throws(() => createCoolifyTransport('http://coolify.example.test', secret, fetch, { allowInsecureHttp: false }), /INVALID_CONFIGURATION/)
+  assert.throws(() => createCoolifyTransport('ftp://coolify.example.test', secret, fetch, { allowInsecureHttp: true }), /INVALID_CONFIGURATION/)
+  assert.throws(() => createCoolifyTransport('http://user:password@coolify.example.test', secret, fetch, { allowInsecureHttp: true }), /INVALID_CONFIGURATION/)
+  assert.throws(() => createCoolifyTransport('https://user:password@example.test', secret), /INVALID_CONFIGURATION/)
   const bad: typeof fetch = async () => Response.json({ unexpected: true })
-  await assert.rejects(createCoolifyTransport('https://coolify.example.test', secret, bad).discover(), /Invalid Coolify response/)
+  await assert.rejects(createCoolifyTransport('https://coolify.example.test', secret, bad).discover(), /INVALID_RESPONSE/)
+})
+
+test('HTTP transport requires opt-in and does not follow redirects with credentials', async () => {
+  const calls: string[] = []
+  const snapshot = await createCoolifyTransport('http://coolify:8080', secret, fixtureRequest(calls), { allowInsecureHttp: true }).discover()
+  assert.equal(snapshot.projects[0].name, 'Production')
+  assert.deepEqual(calls.sort(), Object.keys(payloads).sort())
+  let destinationCalls = 0
+  const destination = createServer((_req, res) => { destinationCalls++; res.end() }).listen(0, '127.0.0.1')
+  await once(destination, 'listening')
+  const destinationAddress = destination.address()
+  assert.ok(destinationAddress && typeof destinationAddress !== 'string')
+  const redirect = createServer((_req, res) => {
+    res.writeHead(302, { Location: `http://127.0.0.1:${destinationAddress.port}/` }).end()
+  }).listen(0, '127.0.0.1')
+  await once(redirect, 'listening')
+  try {
+    const address = redirect.address()
+    assert.ok(address && typeof address !== 'string')
+    await assert.rejects(createCoolifyTransport(`http://127.0.0.1:${address.port}`, secret, fetch, { allowInsecureHttp: true }).discover(), /UPSTREAM_UNREACHABLE/)
+    assert.equal(destinationCalls, 0)
+  } finally {
+    redirect.close()
+    destination.close()
+    await Promise.all([once(redirect, 'close'), once(destination, 'close')])
+  }
 })
 
 test('Coolify transport respects Retry-After after a rate limit response', async () => {
@@ -59,9 +89,10 @@ test('Coolify transport respects Retry-After after a rate limit response', async
     return new Response(null, { status: 429, headers: { 'Retry-After': '60' } })
   }
   const transport = createCoolifyTransport('https://coolify.example.test', secret, limited)
-  await assert.rejects(transport.discover(), /429/)
+  await assert.rejects(transport.discover(), (error: unknown) =>
+    error instanceof Error && error.message === 'UPSTREAM_HTTP' && 'upstreamStatus' in error && error.upstreamStatus === 429)
   const initialCalls = calls
-  await assert.rejects(transport.discover(), /rate limited/)
+  await assert.rejects(transport.discover(), /RATE_LIMITED/)
   assert.equal(calls, initialCalls)
 })
 
@@ -125,5 +156,79 @@ test('Coolify endpoint returns 503 rather than simulated success on failure', as
   } finally {
     server.close()
     await once(server, 'close')
+  }
+})
+
+test('configured HTTP Coolify URL is rejected while the route remains registered', async () => {
+  const previousUrl = process.env.COOLIFY_URL
+  const previousKey = process.env.COOLIFY_API_KEY
+  const previousAllow = process.env.COOLIFY_ALLOW_INSECURE_HTTP
+  process.env.COOLIFY_URL = 'http://coolify:8080'
+  process.env.COOLIFY_API_KEY = secret
+  process.env.COOLIFY_ALLOW_INSECURE_HTTP = 'false'
+  const app = createApp()
+  if (previousUrl === undefined) delete process.env.COOLIFY_URL
+  else process.env.COOLIFY_URL = previousUrl
+  if (previousKey === undefined) delete process.env.COOLIFY_API_KEY
+  else process.env.COOLIFY_API_KEY = previousKey
+  if (previousAllow === undefined) delete process.env.COOLIFY_ALLOW_INSECURE_HTTP
+  else process.env.COOLIFY_ALLOW_INSECURE_HTTP = previousAllow
+  const server = app.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== 'string')
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/coolify/discovery`)
+    assert.equal(response.status, 503)
+    assert.ok(!(await response.text()).includes(secret))
+  } finally {
+    server.close()
+    await once(server, 'close')
+  }
+})
+
+test('backend opt-in enables discovery through HTTP without exposing the key', async () => {
+  const upstream = createServer((req, res) => {
+    if (req.headers.authorization !== `Bearer ${secret}`) {
+      res.writeHead(401).end()
+      return
+    }
+    const result = payloads[req.url ?? '']
+    if (!result) {
+      res.writeHead(404).end()
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(result))
+  }).listen(0, '127.0.0.1')
+  await once(upstream, 'listening')
+  const address = upstream.address()
+  assert.ok(address && typeof address !== 'string')
+  const previousUrl = process.env.COOLIFY_URL
+  const previousKey = process.env.COOLIFY_API_KEY
+  const previousAllow = process.env.COOLIFY_ALLOW_INSECURE_HTTP
+  process.env.COOLIFY_URL = `http://127.0.0.1:${address.port}`
+  process.env.COOLIFY_API_KEY = secret
+  process.env.COOLIFY_ALLOW_INSECURE_HTTP = 'true'
+  const app = createApp()
+  if (previousUrl === undefined) delete process.env.COOLIFY_URL
+  else process.env.COOLIFY_URL = previousUrl
+  if (previousKey === undefined) delete process.env.COOLIFY_API_KEY
+  else process.env.COOLIFY_API_KEY = previousKey
+  if (previousAllow === undefined) delete process.env.COOLIFY_ALLOW_INSECURE_HTTP
+  else process.env.COOLIFY_ALLOW_INSECURE_HTTP = previousAllow
+  const server = app.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const backendAddress = server.address()
+    assert.ok(backendAddress && typeof backendAddress !== 'string')
+    const response = await fetch(`http://127.0.0.1:${backendAddress.port}/api/coolify/discovery`)
+    assert.equal(response.status, 200)
+    const body = await response.text()
+    assert.equal(JSON.parse(body).projects[0].name, 'Production')
+    assert.ok(!body.includes(secret))
+  } finally {
+    server.close()
+    upstream.close()
+    await Promise.all([once(server, 'close'), once(upstream, 'close')])
   }
 })

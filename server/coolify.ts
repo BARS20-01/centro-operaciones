@@ -38,26 +38,36 @@ export interface CoolifyTransport {
   discover(): Promise<CoolifySnapshot>
 }
 
+export class CoolifyError extends Error {
+  constructor(
+    public readonly code: 'INVALID_CONFIGURATION' | 'NOT_CONFIGURED' | 'UPSTREAM_HTTP' | 'UPSTREAM_UNREACHABLE' | 'INVALID_RESPONSE' | 'RATE_LIMITED',
+    public readonly upstreamStatus?: number,
+  ) {
+    super(code)
+    this.name = 'CoolifyError'
+  }
+}
+
 type JsonRecord = Record<string, unknown>
 
 function record(value: unknown): JsonRecord {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Coolify response')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CoolifyError('INVALID_RESPONSE')
   return value as JsonRecord
 }
 
 function array(value: unknown): unknown[] {
-  if (!Array.isArray(value)) throw new Error('Invalid Coolify response')
+  if (!Array.isArray(value)) throw new CoolifyError('INVALID_RESPONSE')
   return value
 }
 
 function identifier(value: unknown): string {
   const result = typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value
-  if (typeof result !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(result)) throw new Error('Invalid Coolify identifier')
+  if (typeof result !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(result)) throw new CoolifyError('INVALID_RESPONSE')
   return result
 }
 
 function name(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 200) throw new Error('Invalid Coolify name')
+  if (typeof value !== 'string' || !value.trim() || value.length > 200) throw new CoolifyError('INVALID_RESPONSE')
   return value.trim()
 }
 
@@ -85,29 +95,49 @@ function timestamp(value: unknown): string | null {
   return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null
 }
 
-export function createCoolifyTransport(baseUrl: string, apiKey: string, request: typeof fetch = fetch): CoolifyTransport {
-  const base = new URL(baseUrl)
-  if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) {
-    throw new Error('COOLIFY_URL must be an HTTPS URL without credentials, query, or fragment')
+export function createCoolifyTransport(
+  baseUrl: string,
+  apiKey: string,
+  request: typeof fetch = fetch,
+  options: { allowInsecureHttp?: boolean } = {},
+): CoolifyTransport {
+  let base: URL
+  try {
+    base = new URL(baseUrl)
+  } catch {
+    throw new CoolifyError('INVALID_CONFIGURATION')
   }
-  if (!apiKey || /[\r\n]/.test(apiKey)) throw new Error('Invalid Coolify API key')
+  const allowedProtocol = base.protocol === 'https:' || (base.protocol === 'http:' && options.allowInsecureHttp === true)
+  if (!allowedProtocol || base.username || base.password || base.search || base.hash) {
+    throw new CoolifyError('INVALID_CONFIGURATION')
+  }
+  if (!apiKey || /[\r\n]/.test(apiKey)) throw new CoolifyError('INVALID_CONFIGURATION')
   base.pathname = `${base.pathname.replace(/\/+$/, '')}/api/v1/`
   let retryAt = 0
 
   async function get(path: string): Promise<unknown> {
-    if (Date.now() < retryAt) throw new Error('Coolify API rate limited')
-    const response = await request(new URL(path, base), {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
-      redirect: 'error',
-      signal: AbortSignal.timeout(15_000),
-    })
+    if (Date.now() < retryAt) throw new CoolifyError('RATE_LIMITED')
+    let response: Response
+    try {
+      response = await request(new URL(path, base), {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
+        redirect: 'error',
+        signal: AbortSignal.timeout(15_000),
+      })
+    } catch {
+      throw new CoolifyError('UPSTREAM_UNREACHABLE')
+    }
     if (response.status === 429) {
       const seconds = Number(response.headers.get('retry-after'))
       const delay = Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 15 * 60_000) : 60_000
       retryAt = Math.max(retryAt, Date.now() + delay)
     }
-    if (!response.ok) throw new Error(`Coolify API request failed (${response.status})`)
-    return response.json()
+    if (!response.ok) throw new CoolifyError('UPSTREAM_HTTP', response.status)
+    try {
+      return await response.json()
+    } catch {
+      throw new CoolifyError('INVALID_RESPONSE')
+    }
   }
 
   return {
@@ -139,7 +169,7 @@ export function createCoolifyTransport(baseUrl: string, apiKey: string, request:
           : typeof rawType === 'string' && rawType.startsWith('standalone-')
             ? 'database'
             : null
-        if (!type) throw new Error('Unsupported Coolify resource type')
+        if (!type) throw new CoolifyError('INVALID_RESPONSE')
         return {
           id: identifier(resource.uuid),
           name: name(resource.name),

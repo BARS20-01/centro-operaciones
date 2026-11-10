@@ -129,14 +129,28 @@ Define las variables interpoladas por el Compose en la configuración de variabl
 | `DOCKER_SOCKET_PATH` | Proxy, runtime | Opcional. Ruta del socket del daemon Docker en el host asignado al recurso. Si no se define, el Compose usa `/var/run/docker.sock`. |
 | `VITE_DOCKER_API_URL` | Web, build | Opcional. Por defecto `/api/docker/containers`. |
 | `VITE_DOCKER_STATS_URL` | Web, build | Opcional. Por defecto `/api/docker/stats`. |
-| `COOLIFY_URL` | API, runtime | Opcional. URL HTTPS confiable de la instancia Coolify, por ejemplo `https://coolify.example.com`, sin `/api/v1`, credenciales ni parámetros. |
+| `COOLIFY_URL` | API, runtime | Opcional. Origen de la instancia Coolify, sin `/api/v1`, credenciales ni parámetros; HTTPS recomendado. Para el VPS indicado, `http://coolify:8080` requiere aceptación explícita de riesgo. |
 | `COOLIFY_API_KEY` | API, runtime | Opcional. Token de Coolify del equipo objetivo con permiso **read**; guardar como secreto en Coolify. No usar `VITE_`, `read:sensitive`, `write`, `deploy` ni `root`. |
+| `COOLIFY_ALLOW_INSECURE_HTTP` | API, runtime | `false` por defecto. Solo el valor exacto `true` permite HTTP y acepta que la clave y los datos viajen sin cifrar. |
 
 Las variables `VITE_*` se consumen como argumentos de build; un cambio requiere reconstruir y desplegar el frontend. Se recomienda conservar las rutas relativas por defecto para usar el mismo origen HTTPS y el proxy Nginx existente.
 
 ### Integración Coolify: alcance y validación
 
 Habilita el acceso a la API de la instancia y su IP allowlist si corresponde. Configura **ambas** variables `COOLIFY_*` solo en el runtime del backend, reinicia el recurso y protege el acceso al dashboard/API mediante autenticación y autorización externa. La aplicación no incorpora autenticación; el endpoint de inventario muestra nombres y URLs de recursos a quien pueda acceder a `/api/`. No publiques el token, no lo incluyas en una URL y evita registrar la configuración Compose interpolada.
+
+Por defecto `COOLIFY_URL` requiere **HTTPS con certificado válido y confiable** desde el contenedor API. Si no existe HTTPS y el operador acepta el riesgo, configura `COOLIFY_URL=http://coolify:8080` y `COOLIFY_ALLOW_INSECURE_HTTP=true` en el recurso Compose; conserva `COOLIFY_API_KEY` como secreto de solo lectura y recrea la API tras desplegar la revisión que implementa esta opción. HTTP transmite la clave y respuestas sin cifrar: una red Docker interna no protege frente al host, a otros contenedores conectados, a un destinatario DNS incorrecto ni a interceptación. Limita la red a participantes confiables y usa HTTPS en cuanto esté disponible; nunca desactives la validación TLS. El backend emite una advertencia al habilitar HTTP.
+
+El Compose conecta la API a `web-api` y `api-docker`; **no garantiza** que el contenedor `coolify` comparta esas redes ni que su nombre resuelva a la instancia correcta. Comprueba desde el contenedor API, sin token y sin imprimir variables:
+
+```sh
+node -e "require('node:dns').lookup('coolify', (e, a) => { if (e) { console.error('DNS: no resuelve'); process.exitCode = 1 } else console.log('DNS resuelto:', a) })"
+node -e "fetch('http://coolify:8080/api/health', {signal: AbortSignal.timeout(5000), redirect: 'error'}).then(r => { console.log('Coolify health HTTP', r.status); if (!r.ok) process.exitCode = 1 }).catch(() => { console.error('Coolify health inaccesible'); process.exitCode = 1 })"
+```
+
+Un DNS y healthcheck exitosos no garantizan la identidad del servidor ni los permisos del token. Si falla la resolución o conexión, el administrador debe revisar las redes y aliases reales de ambos contenedores y proporcionar una ruta privada de confianza; no conectar automáticamente la API a redes adicionales ni publicar el puerto 8080. Si la salud responde, valida `/api/coolify/discovery` a través del acceso autenticado a NEXUS PRIME. La instancia debe permitir API y aceptar el token y su alcance; no imprimas ni envíes el token al verificarlo.
+
+Si `/api/coolify/discovery` devuelve `404`, comprueba la revisión desplegada, que el build incluya `dist-server/app.js` y `dist-server/coolify.js`, y que Nginx reenvíe `/api/` al backend correcto. Si devuelve `503`, la ruta está activa pero el descubrimiento falló. Los Runtime Logs, desde la versión que incorpora el diagnóstico detallado, indican `NOT_CONFIGURED`, `INVALID_CONFIGURATION`, `UPSTREAM_UNREACHABLE`, `UPSTREAM_HTTP` (con estado HTTP), `RATE_LIMITED` o `INVALID_RESPONSE`, sin registrar la clave ni el cuerpo de la respuesta. Un `503` no permite confirmar por sí solo cuál de estas causas ocurrió.
 
 El backend consulta únicamente endpoints GET de proyectos, detalle de proyecto (entornos), recursos y despliegues activos. La salida se limita a campos seleccionados, excluye credenciales, logs, Compose y valores de entorno, y elimina credenciales, rutas y parámetros de las URLs. Coolify limita el token al equipo y ámbito autorizados: **no se garantiza inventario de otros equipos**. Una respuesta incompleta o un error se comunica como `503`, no como LIVE; tras una pérdida de conexión se conservan nodos anteriores marcados como desactualizados. Sin conexión no se fabrican recursos Coolify simulados.
 

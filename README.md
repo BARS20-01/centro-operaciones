@@ -366,8 +366,9 @@ Define las variables en el recurso Compose de Coolify. `VITE_*` se usan como bui
 | `DOCKER_SOCKET_PATH` | socket proxy | `/var/run/docker.sock` por defecto; ruta del socket en el host Docker de Coolify. |
 | `VITE_DOCKER_API_URL` | web (build) | `/api/docker/containers` por defecto, mismo origen HTTPS. |
 | `VITE_DOCKER_STATS_URL` | web (build) | `/api/docker/stats` por defecto, mismo origen HTTPS. |
-| `COOLIFY_URL` | API | URL HTTPS de la instancia Coolify, sin `/api/v1` ni credenciales. |
+| `COOLIFY_URL` | API | Origen de la instancia Coolify, sin `/api/v1` ni credenciales; HTTPS recomendado. |
 | `COOLIFY_API_KEY` | API | Token secreto de lectura del equipo; configurar en Coolify, nunca en variables `VITE_*`. |
+| `COOLIFY_ALLOW_INSECURE_HTTP` | API | `false` por defecto. `true` autoriza HTTP sin cifrado solo tras aceptar el riesgo; consultar la guía. |
 | `DOCKER_HOST` | API | `tcp://nexus-prime-docker-proxy:2375`; no apuntar la API al socket del host. |
 | `API_HOST` | API | `0.0.0.0` dentro de la red privada Compose. |
 | `API_PORT` | API | `3001`. |
