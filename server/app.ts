@@ -24,6 +24,7 @@ export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTranspo
       const url = process.env.COOLIFY_URL ?? ''
       coolify = createCoolifyTransport(url, process.env.COOLIFY_API_KEY ?? '', fetch, {
         allowInsecureHttp: process.env.COOLIFY_ALLOW_INSECURE_HTTP === 'true',
+        diagnosticLogs: process.env.COOLIFY_DIAGNOSTICS_LOG === 'true',
       })
       if (new URL(url).protocol === 'http:') {
         console.warn('Coolify HTTP enabled: API credentials and traffic are unencrypted; use a trusted isolated network')

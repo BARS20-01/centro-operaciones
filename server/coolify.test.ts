@@ -96,6 +96,90 @@ test('Coolify transport respects Retry-After after a rate limit response', async
   assert.equal(calls, initialCalls)
 })
 
+test('diagnostic traces report endpoint and status without logging keys, response bodies, or project identifiers', async () => {
+  const traces: string[] = []
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input))
+    if (url.pathname === '/api/v1/projects/project-1') return new Response(secret, { status: 403 })
+    return Response.json(payloads[url.pathname])
+  }
+  const transport = createCoolifyTransport('http://coolify:8080', secret, request, {
+    allowInsecureHttp: true,
+    diagnosticLogs: true,
+    logger: (message) => traces.push(message),
+  })
+  await assert.rejects(transport.discover(), /UPSTREAM_HTTP/)
+  assert.ok(traces.some((line) => line.includes('GET /api/v1/projects status=200')))
+  assert.ok(traces.some((line) => line.includes('GET /api/v1/projects/{uuid} status=403')))
+  assert.ok(traces.every((line) => !line.includes(secret) && !line.includes('project-1')))
+})
+
+test('diagnostic traces distinguish DNS, connection, timeout, and invalid schema without raw exception text', async () => {
+  for (const [code, expected] of [['ENOTFOUND', 'DNS_NOT_FOUND'], ['ECONNREFUSED', 'CONNECTION_REFUSED'], ['ETIMEDOUT', 'CONNECTION_TIMEOUT']] as const) {
+    const traces: string[] = []
+    const request: typeof fetch = async () => {
+      throw new Error(secret, { cause: Object.assign(new Error(secret), { code }) })
+    }
+    await assert.rejects(createCoolifyTransport('https://coolify.example.test', secret, request, {
+      logger: (message) => traces.push(message),
+    }).discover(), /UPSTREAM_UNREACHABLE/)
+    assert.ok(traces.some((line) => line.includes(`cause=${expected}`) && line.includes('/api/v1/')))
+    assert.ok(traces.every((line) => !line.includes(secret)))
+  }
+  const traces: string[] = []
+  const invalid: typeof fetch = async () => Response.json({ secret })
+  await assert.rejects(createCoolifyTransport('https://coolify.example.test', secret, invalid, {
+    logger: (message) => traces.push(message),
+  }).discover(), /INVALID_RESPONSE/)
+  assert.ok(traces.some((line) => line.includes('/api/v1/projects result=INVALID_RESPONSE')))
+  assert.ok(traces.every((line) => !line.includes(secret)))
+})
+
+test('diagnostic traces identify the failed parsing field without recording values', async () => {
+  const cases: Array<{ path: string; payload: unknown; field: string; actual: string }> = [
+    { path: '/api/v1/projects', payload: [{ uuid: secret, name: null }], field: 'project.name', actual: 'null' },
+    { path: '/api/v1/projects/project-1', payload: { environments: [{ id: {}, name: secret }] }, field: 'environment.id', actual: 'object' },
+    { path: '/api/v1/resources', payload: [{ uuid: 'app-1', name: secret, type: secret }], field: 'resource.type', actual: 'string' },
+    { path: '/api/v1/deployments', payload: [{ deployment_uuid: null, logs: secret }], field: 'deployment.deployment_uuid', actual: 'null' },
+    { path: '/api/v1/deployments', payload: { message: secret }, field: 'root', actual: 'object' },
+  ]
+  for (const { path, payload, field, actual } of cases) {
+    const traces: string[] = []
+    const request: typeof fetch = async (input) => {
+      const pathname = new URL(String(input)).pathname
+      return Response.json(pathname === path ? payload : payloads[pathname])
+    }
+    await assert.rejects(createCoolifyTransport('https://coolify.example.test', secret, request, {
+      diagnosticLogs: true,
+      logger: (message) => traces.push(message),
+    }).discover(), /INVALID_RESPONSE/)
+    assert.ok(traces.some((line) => line.includes(`field=${field}`) && line.includes(`actual=${actual}`)))
+    assert.ok(traces.some((line) => line.includes('Coolify discovery: result=INVALID_RESPONSE')))
+    assert.ok(traces.every((line) => !line.includes(secret) && !line.includes('project-1')))
+  }
+})
+
+test('deployment parsing accepts numeric-keyed Coolify collections and reports stage counts', async () => {
+  const traces: string[] = []
+  const request: typeof fetch = async (input) => {
+    const pathname = new URL(String(input)).pathname
+    const result = pathname === '/api/v1/deployments'
+      ? { '1': { deployment_uuid: 'deploy-2', application_id: 34 }, '0': { deployment_uuid: 'deploy-1', application_id: 34 } }
+      : payloads[pathname]
+    return Response.json(result)
+  }
+  const snapshot = await createCoolifyTransport('https://coolify.example.test', secret, request, {
+    diagnosticLogs: true,
+    logger: (message) => traces.push(message),
+  }).discover()
+  assert.deepEqual(snapshot.deployments.map((deployment) => deployment.id).sort(), ['deploy-1', 'deploy-2'])
+  for (const stage of ['projects count=1', 'environments count=1', 'resources count=2', 'deployments count=2']) {
+    assert.ok(traces.some((line) => line.includes(`stage=${stage}`)))
+  }
+  assert.ok(traces.some((line) => line.includes('Coolify discovery: result=SUCCESS')))
+  assert.ok(traces.every((line) => !line.includes(secret) && !line.includes('project-1') && !line.includes('deploy-1')))
+})
+
 test('Coolify nodes merge under projects and environments without altering Docker', async () => {
   const snapshot = await createCoolifyTransport('https://coolify.example.test', secret, fixtureRequest([])).discover()
   const base = mergeDiscovery(emptyGraph, { nodes: [

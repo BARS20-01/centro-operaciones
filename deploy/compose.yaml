@@ -35,6 +35,7 @@ services:
       COOLIFY_URL: ${COOLIFY_URL:-}
       COOLIFY_API_KEY: ${COOLIFY_API_KEY:-}
       COOLIFY_ALLOW_INSECURE_HTTP: ${COOLIFY_ALLOW_INSECURE_HTTP:-false}
+      COOLIFY_DIAGNOSTICS_LOG: ${COOLIFY_DIAGNOSTICS_LOG:-false}
     expose:
       - "3001"
     depends_on:
