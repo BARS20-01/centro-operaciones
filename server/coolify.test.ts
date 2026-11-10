@@ -1,0 +1,129 @@
+import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { test } from 'node:test'
+import { createApp } from './app.js'
+import { createCoolifyTransport } from './coolify.js'
+import { coolifyNodes } from '../src/integrations/coolify.integration.js'
+import { emptyGraph, mergeDiscovery } from '../src/domain/graph.js'
+
+const secret = 'fixture-token-do-not-expose'
+const payloads: Record<string, unknown> = {
+  '/api/v1/projects': [{ uuid: 'project-1', name: 'Production' }],
+  '/api/v1/projects/project-1': {
+    uuid: 'project-1',
+    environments: [{ id: 12, name: 'production' }],
+    private_key: secret,
+  },
+  '/api/v1/resources': [
+    { id: 34, uuid: 'app-1', name: 'Grafana', type: 'application', environment_id: 12, status: 'running:healthy', fqdn: 'https://user:password@grafana.example.test/path?token=secret', password: secret },
+    { uuid: 'db-1', name: 'Database', type: 'standalone-postgresql', environment_id: 12, status: 'exited:unhealthy', postgres_password: secret },
+  ],
+  '/api/v1/deployments': [{ deployment_uuid: 'deploy-1', application_id: '34', status: 'in_progress', created_at: '2026-01-01T00:00:00Z', logs: secret }],
+}
+
+function fixtureRequest(calls: string[]): typeof fetch {
+  return async (input, init) => {
+    const url = new URL(String(input))
+    calls.push(url.pathname)
+    assert.equal(new Headers(init?.headers).get('authorization'), `Bearer ${secret}`)
+    assert.equal(init?.redirect, 'error')
+    if (!(url.pathname in payloads)) return new Response('Not found', { status: 404 })
+    return Response.json(payloads[url.pathname])
+  }
+}
+
+test('Coolify transport reads only allowlisted fields and does not expose secrets', async () => {
+  const calls: string[] = []
+  const transport = createCoolifyTransport('https://coolify.example.test', secret, fixtureRequest(calls))
+  const snapshot = await transport.discover()
+  assert.deepEqual(calls.sort(), Object.keys(payloads).sort())
+  assert.equal(snapshot.resources[0].url, 'https://grafana.example.test')
+  assert.equal(snapshot.resources[1].type, 'database')
+  assert.equal(snapshot.environments[0].projectId, 'project-1')
+  assert.equal(snapshot.deployments[0].applicationId, '34')
+  const response = JSON.stringify(snapshot)
+  for (const value of [secret, 'password', '?token', 'private_key', 'logs']) assert.ok(!response.includes(value))
+})
+
+test('Coolify transport fails closed on malformed or incomplete responses', async () => {
+  assert.throws(() => createCoolifyTransport('http://coolify.example.test', secret), /HTTPS/)
+  assert.throws(() => createCoolifyTransport('https://user:password@example.test', secret), /HTTPS/)
+  const bad: typeof fetch = async () => Response.json({ unexpected: true })
+  await assert.rejects(createCoolifyTransport('https://coolify.example.test', secret, bad).discover(), /Invalid Coolify response/)
+})
+
+test('Coolify transport respects Retry-After after a rate limit response', async () => {
+  let calls = 0
+  const limited: typeof fetch = async () => {
+    calls++
+    return new Response(null, { status: 429, headers: { 'Retry-After': '60' } })
+  }
+  const transport = createCoolifyTransport('https://coolify.example.test', secret, limited)
+  await assert.rejects(transport.discover(), /429/)
+  const initialCalls = calls
+  await assert.rejects(transport.discover(), /rate limited/)
+  assert.equal(calls, initialCalls)
+})
+
+test('Coolify nodes merge under projects and environments without altering Docker', async () => {
+  const snapshot = await createCoolifyTransport('https://coolify.example.test', secret, fixtureRequest([])).discover()
+  const base = mergeDiscovery(emptyGraph, { nodes: [
+    { id: 'vps-web', name: 'Core', kind: 'vps', layer: 'infrastructure', status: 'ok', parentId: null },
+    { id: 'docker', name: 'Docker', kind: 'docker', layer: 'infrastructure', status: 'ok', parentId: 'vps-web' },
+  ] }).graph
+  const nodes = coolifyNodes(snapshot)
+  const merged = mergeDiscovery(base, { nodes })
+  assert.equal(merged.rejected.length, 0)
+  assert.equal(merged.graph.nodes['coolify-resource-app-1'].parentId, 'coolify-env-12')
+  assert.equal(merged.graph.nodes['coolify-resource-app-1'].projectName, 'Production')
+  assert.equal(merged.graph.nodes['coolify-resource-app-1'].deploymentStatus, 'in_progress')
+  assert.equal(merged.graph.nodes['coolify-deployment-deploy-1'].parentId, 'coolify-resource-app-1')
+  assert.equal(merged.graph.nodes['coolify-resource-db-1'].status, 'critical')
+  assert.equal(merged.graph.nodes.docker, base.nodes.docker)
+  assert.equal(mergeDiscovery(merged.graph, { nodes: coolifyNodes(snapshot) }).graph, merged.graph)
+  const updatedNodes = coolifyNodes({ ...snapshot, resources: snapshot.resources.map((resource) =>
+    resource.id === 'app-1' ? { ...resource, status: 'exited' } : resource) })
+  const updated = mergeDiscovery(merged.graph, { nodes: updatedNodes }).graph
+  assert.equal(updated.nodes['coolify-resource-app-1'].status, 'offline')
+  assert.equal(updated.topology, merged.graph.topology)
+  const removed = mergeDiscovery(merged.graph, { removed: ['coolify-project-project-1'] }).graph
+  assert.equal(removed.nodes['coolify-resource-app-1'], undefined)
+  assert.equal(removed.nodes.docker, base.nodes.docker)
+})
+
+test('Coolify endpoint returns sanitized inventory and shares concurrent discovery', async () => {
+  let count = 0
+  const transport = createCoolifyTransport('https://coolify.example.test', secret, fixtureRequest([]))
+  const server = createApp(undefined, { async discover() { count++; return transport.discover() } }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== 'string')
+    const url = `http://127.0.0.1:${address.port}/api/coolify/discovery`
+    const responses = await Promise.all([fetch(url), fetch(url)])
+    assert.equal(count, 1)
+    for (const response of responses) {
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('cache-control'), 'no-store')
+      assert.ok(!(await response.text()).includes(secret))
+    }
+  } finally {
+    server.close()
+    await once(server, 'close')
+  }
+})
+
+test('Coolify endpoint returns 503 rather than simulated success on failure', async () => {
+  const server = createApp(undefined, { async discover() { throw new Error(secret) } }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== 'string')
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/coolify/discovery`)
+    assert.equal(response.status, 503)
+    assert.ok(!(await response.text()).includes(secret))
+  } finally {
+    server.close()
+    await once(server, 'close')
+  }
+})

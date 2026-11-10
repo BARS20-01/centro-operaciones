@@ -201,6 +201,7 @@ const toReading = (c: DockerContainer, now: number): ContainerReading => ({
 export interface DockerIntegration extends Integration {
   id: 'docker'
   getContainers(): Promise<ContainerReading[]>
+  discover(): Promise<DiscoveryResult>
 }
 
 export function createDockerIntegration(options: DockerOptions = {}): DockerIntegration {
@@ -300,6 +301,7 @@ export function createDockerIntegration(options: DockerOptions = {}): DockerInte
         description: `Contenedor de ${c.image}`,
         category: 'Docker container',
         source,
+        sourceSystem: 'docker',
         image: c.image,
         ports: c.ports,
         networks: c.networks,

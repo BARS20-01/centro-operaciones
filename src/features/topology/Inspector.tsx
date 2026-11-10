@@ -176,6 +176,18 @@ export function Inspector({ graph, id, model, source, onSelect, onClose }: Props
           <time className="text-slate-300">{node.startedAt}</time>
         </Row>
       )}
+      {node.sourceSystem === 'coolify' && ['Coolify application', 'Coolify service', 'Coolify database'].includes(node.category ?? '') && (
+        <>
+          <Row label="Application Name"><span className="text-slate-300">{node.name}</span></Row>
+          <Row label="Project Name"><span className="text-slate-300">{node.projectName ?? 'No disponible'}</span></Row>
+          <Row label="Environment"><span className="text-slate-300">{node.environmentName ?? 'No disponible'}</span></Row>
+          <Row label="Current Status"><span className="text-slate-300">{node.currentStatus ?? 'No disponible'}</span></Row>
+          <Row label="URL"><span className="break-all text-slate-300">{node.publicUrl ?? 'No disponible'}</span></Row>
+          <Row label="Deployment Status"><span className="text-slate-300">{node.deploymentStatus ?? 'Sin despliegue activo conocido'}</span></Row>
+          <Row label="Active Deployment"><span className="text-slate-300">{node.deploymentTime ?? 'No disponible'}</span></Row>
+          <Row label="Docker Container"><span className="text-slate-300">Asociación no verificada</span></Row>
+        </>
+      )}
       <Row label="Descripción">
         <span className="text-slate-300">{node.description ?? 'Descripción no disponible.'}</span>
       </Row>
@@ -218,7 +230,7 @@ export function Inspector({ graph, id, model, source, onSelect, onClose }: Props
       </Row>
       <Row label="Fuente">
         <span className="font-semibold" style={{ color: dataSource === 'live' ? 'var(--theme-success)' : 'var(--theme-warning)' }}>
-          {dataSource === 'live' ? 'LIVE' : 'SIMULATED'}
+          {node.sourceSystem ? `${node.sourceSystem.toUpperCase()} ` : ''}{dataSource === 'live' ? 'LIVE' : 'SIMULATED'}{node.stale ? ' · SINCRONIZACIÓN FALLIDA' : ''}
         </span>
       </Row>
       <Row label={`Aloja (${hosted.length})`}>{chips(hosted)}</Row>

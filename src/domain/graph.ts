@@ -69,6 +69,14 @@ const sameNode = (a: TwinNode, b: TwinNode) =>
   a.repositoryUrl === b.repositoryUrl &&
   a.updatedAt === b.updatedAt &&
   a.source === b.source &&
+  a.sourceSystem === b.sourceSystem &&
+  a.stale === b.stale &&
+  a.projectName === b.projectName &&
+  a.environmentName === b.environmentName &&
+  a.currentStatus === b.currentStatus &&
+  a.publicUrl === b.publicUrl &&
+  a.deploymentStatus === b.deploymentStatus &&
+  a.deploymentTime === b.deploymentTime &&
   a.image === b.image &&
   a.startedAt === b.startedAt &&
   sameStrings(a.ports, b.ports) &&

@@ -129,8 +129,20 @@ Define las variables interpoladas por el Compose en la configuración de variabl
 | `DOCKER_SOCKET_PATH` | Proxy, runtime | Opcional. Ruta del socket del daemon Docker en el host asignado al recurso. Si no se define, el Compose usa `/var/run/docker.sock`. |
 | `VITE_DOCKER_API_URL` | Web, build | Opcional. Por defecto `/api/docker/containers`. |
 | `VITE_DOCKER_STATS_URL` | Web, build | Opcional. Por defecto `/api/docker/stats`. |
+| `COOLIFY_URL` | API, runtime | Opcional. URL HTTPS confiable de la instancia Coolify, por ejemplo `https://coolify.example.com`, sin `/api/v1`, credenciales ni parámetros. |
+| `COOLIFY_API_KEY` | API, runtime | Opcional. Token de Coolify del equipo objetivo con permiso **read**; guardar como secreto en Coolify. No usar `VITE_`, `read:sensitive`, `write`, `deploy` ni `root`. |
 
 Las variables `VITE_*` se consumen como argumentos de build; un cambio requiere reconstruir y desplegar el frontend. Se recomienda conservar las rutas relativas por defecto para usar el mismo origen HTTPS y el proxy Nginx existente.
+
+### Integración Coolify: alcance y validación
+
+Habilita el acceso a la API de la instancia y su IP allowlist si corresponde. Configura **ambas** variables `COOLIFY_*` solo en el runtime del backend, reinicia el recurso y protege el acceso al dashboard/API mediante autenticación y autorización externa. La aplicación no incorpora autenticación; el endpoint de inventario muestra nombres y URLs de recursos a quien pueda acceder a `/api/`. No publiques el token, no lo incluyas en una URL y evita registrar la configuración Compose interpolada.
+
+El backend consulta únicamente endpoints GET de proyectos, detalle de proyecto (entornos), recursos y despliegues activos. La salida se limita a campos seleccionados, excluye credenciales, logs, Compose y valores de entorno, y elimina credenciales, rutas y parámetros de las URLs. Coolify limita el token al equipo y ámbito autorizados: **no se garantiza inventario de otros equipos**. Una respuesta incompleta o un error se comunica como `503`, no como LIVE; tras una pérdida de conexión se conservan nodos anteriores marcados como desactualizados. Sin conexión no se fabrican recursos Coolify simulados.
+
+Las lecturas se comparten y cachean al menos 30 segundos, con TTL mayor para muchos proyectos y espera ante `429`. La API de Coolify y su versión, permisos y rate limit deben verificarse en el entorno real. El endpoint de despliegues consultado solo enumera **despliegues en curso**; el historial y el último despliegue no quedan establecidos por ausencia de resultados. La asociación con contenedores Docker, builds históricos, eventos `Deployment Finished`/`Container Restarted` y la identificación causal de qué despliegue provocó una caída **no están implementados ni verificados**. No inferir estas relaciones por coincidencia de nombres.
+
+Validar desde una sesión autenticada: abre `/diagnostics`, verifica **Coolify Source LIVE**, los conteos y timestamp; confirma en el Digital Twin los proyectos, entornos y recursos del equipo autorizado y en el Inspector la fuente y el estado. Compara los resultados con Coolify y prueba un fallo de conectividad sin exponer el token. La integración con fixtures no certifica que Grafana, Uptime Kuma o NEXUS PRIME sean recursos del equipo/instancia configurados.
 
 El Compose ya establece estas variables runtime de la API; no hace falta volver a definirlas en Coolify mientras no se modifique ese archivo:
 

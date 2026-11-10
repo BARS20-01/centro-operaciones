@@ -1,5 +1,6 @@
 import express from 'express'
 import { containerStats, dockerServerVersion, listContainers, type Container, type DockerCommand } from './docker.js'
+import { createCoolifyTransport, type CoolifySnapshot, type CoolifyTransport } from './coolify.js'
 
 export type DiagnosticStatus = 'OK' | 'WARN' | 'ERROR'
 
@@ -11,11 +12,37 @@ export interface SystemDiagnostics {
   discoveryStatus: DiagnosticStatus
 }
 
-export function createApp(run?: DockerCommand) {
+export function createApp(run?: DockerCommand, coolifyTransport?: CoolifyTransport) {
   const app = express()
   app.disable('x-powered-by')
   let pendingCollection: Promise<Container[]> | undefined
   let lastDiscovery: string | null = null
+  let coolify: CoolifyTransport | undefined = coolifyTransport
+  let coolifyConfigurationError = false
+  if (!coolify && (process.env.COOLIFY_URL || process.env.COOLIFY_API_KEY)) {
+    try {
+      coolify = createCoolifyTransport(process.env.COOLIFY_URL ?? '', process.env.COOLIFY_API_KEY ?? '')
+    } catch {
+      coolifyConfigurationError = true
+      console.error('Coolify configuration is invalid')
+    }
+  }
+  let pendingCoolify: Promise<CoolifySnapshot> | undefined
+  let cachedCoolify: CoolifySnapshot | undefined
+  let cachedAt = 0
+  const collectCoolify = () => {
+    if (!coolify) return Promise.reject(new Error(coolifyConfigurationError ? 'Invalid configuration' : 'Not configured'))
+    const cacheMs = cachedCoolify ? Math.max(30_000, (cachedCoolify.projects.length + 3) * 600) : 30_000
+    if (cachedCoolify && Date.now() - cachedAt < cacheMs) return Promise.resolve(cachedCoolify)
+    if (!pendingCoolify) {
+      pendingCoolify = coolify.discover().then((snapshot) => {
+        cachedCoolify = snapshot
+        cachedAt = Date.now()
+        return snapshot
+      }).finally(() => { pendingCoolify = undefined })
+    }
+    return pendingCoolify
+  }
   const collect = () => {
     if (!pendingCollection) {
       pendingCollection = listContainers(run).finally(() => {
@@ -38,6 +65,14 @@ export function createApp(run?: DockerCommand) {
   })
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'OK' })
+  })
+  app.get('/api/coolify/discovery', async (_req, res) => {
+    try {
+      res.json(await collectCoolify())
+    } catch {
+      console.error('Coolify discovery unavailable')
+      res.status(503).json({ error: 'Coolify discovery unavailable' })
+    }
   })
   app.get('/api/diagnostics', async (_req, res) => {
     const [versionResult, collectionResult] = await Promise.allSettled([

@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { Activity, CheckCircle2, RefreshCw, TriangleAlert, XCircle } from 'lucide-react'
 import { createInitialSnapshot } from '@/data/mock'
 import { mergeDiscovery } from '@/domain/graph'
-import { dockerIntegration } from '@/integrations/docker.integration'
+import { createDockerIntegration, httpTransport } from '@/integrations/docker.integration'
+import { fetchCoolifySnapshot, type CoolifySnapshot } from '@/integrations/coolify.integration'
+
+const apiPath = import.meta.env.DEV ? '/diagnostics-api' : '/api'
 
 type CheckStatus = 'OK' | 'WARN' | 'ERROR'
 
@@ -25,6 +28,7 @@ interface SystemSnapshot {
   dockerVersion: string | null
   containersFound: number | null
   lastDiscovery: string | null
+  dockerSource: 'live' | 'simulated' | 'unavailable'
   checks: SystemCheck[]
 }
 
@@ -38,7 +42,7 @@ function isApiDiagnostics(value: unknown): value is ApiDiagnostics {
 }
 
 async function fetchApiDiagnostics(signal: AbortSignal): Promise<ApiDiagnostics> {
-  const response = await fetch('/api/diagnostics', { signal, headers: { Accept: 'application/json' } })
+  const response = await fetch(`${apiPath}/diagnostics`, { signal, headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error(`Diagnostics API returned ${response.status}`)
   const value: unknown = await response.json()
   if (!isApiDiagnostics(value)) throw new Error('Invalid diagnostics response')
@@ -74,6 +78,31 @@ export default function SystemDiagnosticsPage() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null)
   const [checking, setChecking] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [coolify, setCoolify] = useState<CoolifySnapshot | null>(null)
+  const [coolifyStatus, setCoolifyStatus] = useState<'checking' | 'live' | 'unavailable'>('checking')
+  const [diagnosticsDocker] = useState(() => createDockerIntegration({
+    transport: httpTransport(`${apiPath}/docker/containers`, `${apiPath}/docker/stats`),
+  }))
+
+  useEffect(() => {
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout>
+    const controller = new AbortController()
+    const check = async () => {
+      try {
+        const result = await fetchCoolifySnapshot(controller.signal, apiPath)
+        if (!disposed) { setCoolify(result); setCoolifyStatus('live') }
+      } catch {
+        if (!disposed) {
+          setCoolifyStatus('unavailable')
+          console.warn('Coolify diagnostics unavailable')
+        }
+      }
+      if (!disposed) timer = setTimeout(check, 30_000)
+    }
+    void check()
+    return () => { disposed = true; controller.abort(); clearTimeout(timer) }
+  }, [refreshKey])
 
   useEffect(() => {
     let disposed = false
@@ -87,7 +116,7 @@ export default function SystemDiagnosticsPage() {
       const timeout = setTimeout(() => controller.abort(), 45_000)
       const [apiResult, discoveryResult] = await Promise.allSettled([
         fetchApiDiagnostics(controller.signal),
-        dockerIntegration.discover!(),
+        diagnosticsDocker.discover(),
       ])
       clearTimeout(timeout)
       if (disposed) return
@@ -96,7 +125,7 @@ export default function SystemDiagnosticsPage() {
       if (apiResult.status === 'rejected') console.error('System diagnostics API unavailable:', apiResult.reason)
       if (discoveryResult.status === 'rejected') console.error('System diagnostics discovery failed:', discoveryResult.reason)
 
-      const source = dockerIntegration.source ?? 'simulated'
+      const source = discoveryResult.status === 'fulfilled' ? diagnosticsDocker.source ?? 'unavailable' : 'unavailable'
       const discovery = discoveryResult.status === 'fulfilled' ? discoveryResult.value : null
       const merged = discovery ? mergeDiscovery(createInitialSnapshot().graph, discovery) : null
       const discoveryStatus: CheckStatus = !discovery
@@ -118,6 +147,7 @@ export default function SystemDiagnosticsPage() {
         dockerVersion: api?.dockerVersion ?? null,
         containersFound: source === 'live' ? api?.containersFound ?? null : null,
         lastDiscovery: api?.lastDiscovery ?? null,
+        dockerSource: source,
         checks: [
           { name: 'Frontend', status: 'OK', detail: 'Interfaz de diagnóstico cargada en el navegador.' },
           {
@@ -164,7 +194,7 @@ export default function SystemDiagnosticsPage() {
       activeController?.abort()
       clearTimeout(timer)
     }
-  }, [refreshKey])
+  }, [refreshKey, diagnosticsDocker])
 
   return (
     <div className="h-full overflow-y-auto p-3 sm:p-5">
@@ -177,6 +207,7 @@ export default function SystemDiagnosticsPage() {
                 System Diagnostics
               </h2>
               <p className="text-xs text-slate-400">Estado de la ruta de despliegue y de la integración Docker LIVE.</p>
+              <p className="text-xs text-slate-400">Origen API: {import.meta.env.DEV ? import.meta.env.VITE_DIAGNOSTICS_ORIGIN : 'mismo origen del despliegue'}</p>
             </div>
           </div>
           <button
@@ -227,10 +258,23 @@ export default function SystemDiagnosticsPage() {
             Last Discovery: <time className="text-slate-200">{formatTime(snapshot?.lastDiscovery ?? null)}</time>
           </span>
           <span className="text-slate-400">
-            Fuente Docker: <strong className={dockerIntegration.source === 'live' ? 'text-ok' : 'text-amber'}>
-              {dockerIntegration.source === 'live' ? 'LIVE' : 'SIMULATED / CHECKING'}
+            Fuente Docker: <strong className={snapshot?.dockerSource === 'live' ? 'text-ok' : 'text-amber'}>
+              {snapshot?.dockerSource === 'live' ? 'LIVE' : snapshot?.dockerSource === 'unavailable' ? 'UNAVAILABLE' : 'SIMULATED / CHECKING'}
             </strong>
           </span>
+        </section>
+
+        <section className="hud-panel rounded-lg px-4 py-3" aria-label="Coolify Diagnostics">
+          <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-neon">Coolify Diagnostics</h3>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Metric label="API Reachable" value={coolifyStatus === 'live' ? 'OK' : coolifyStatus === 'checking' ? 'CHECKING' : 'UNAVAILABLE'} />
+            <Metric label="Coolify Source" value={coolifyStatus === 'live' ? 'LIVE' : 'SIMULATED / UNAVAILABLE'} />
+            <Metric label="Projects Discovered" value={coolifyStatus === 'live' ? String(coolify?.projects.length ?? 0) : '—'} />
+            <Metric label="Applications Discovered" value={coolifyStatus === 'live' ? String(coolify?.resources.filter((r) => r.type === 'application').length ?? 0) : '—'} />
+            <Metric label="Deployments Discovered (activos)" value={coolifyStatus === 'live' ? String(coolify?.deployments.length ?? 0) : '—'} />
+            <Metric label="Discovery Timestamp" value={coolifyStatus === 'live' ? formatTime(coolify?.checkedAt ?? null) : '—'} />
+          </div>
+          <p className="mt-3 text-xs text-slate-400">Sin conexión no se fabrican recursos Coolify; la fuente no está validada como LIVE. Los despliegues contados son únicamente los activos que devuelve la API.</p>
         </section>
 
         <p className="text-[11px] leading-relaxed text-slate-500">

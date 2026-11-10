@@ -230,6 +230,8 @@ Para ensayar el mapa con nodos adicionales se puede abrir `/?stress=200`, `/?str
 
 ## Docker Integration
 
+En desarrollo, System Diagnostics usa un proxy independiente. Para validar el VPS-WEB desde este equipo, crea `.env.local` (ignorado por Git) con `NEXUS_DIAGNOSTICS_API_TARGET=http://nexus-prime.10.91.32.32.sslip.io` y reinicia Vite si no se reinicia automáticamente. La pantalla muestra el origen seleccionado; sin esa variable usa `http://127.0.0.1:3001`. Este ajuste no cambia el destino `/api` del Digital Twin ni el comportamiento de producción, que continúa usando el mismo origen. El destino indicado usa HTTP: úsalo solo en una red de confianza; protege la API y usa HTTPS para acceso externo.
+
 [`docker.integration.ts`](src/integrations/docker.integration.ts) implementa `Integration` y `DockerTransport`. Por defecto consulta desde el navegador:
 
 ```text
@@ -364,10 +366,14 @@ Define las variables en el recurso Compose de Coolify. `VITE_*` se usan como bui
 | `DOCKER_SOCKET_PATH` | socket proxy | `/var/run/docker.sock` por defecto; ruta del socket en el host Docker de Coolify. |
 | `VITE_DOCKER_API_URL` | web (build) | `/api/docker/containers` por defecto, mismo origen HTTPS. |
 | `VITE_DOCKER_STATS_URL` | web (build) | `/api/docker/stats` por defecto, mismo origen HTTPS. |
+| `COOLIFY_URL` | API | URL HTTPS de la instancia Coolify, sin `/api/v1` ni credenciales. |
+| `COOLIFY_API_KEY` | API | Token secreto de lectura del equipo; configurar en Coolify, nunca en variables `VITE_*`. |
 | `DOCKER_HOST` | API | `tcp://nexus-prime-docker-proxy:2375`; no apuntar la API al socket del host. |
 | `API_HOST` | API | `0.0.0.0` dentro de la red privada Compose. |
 | `API_PORT` | API | `3001`. |
 | `API_ALLOW_REMOTE` | API | `true` solo dentro de la topología privada descrita. No publicar el puerto del backend. |
+
+El descubrimiento Coolify usa las variables runtime del backend y funciona independientemente de Docker. Expone al dashboard solo campos seleccionados de proyectos, entornos, recursos y despliegues activos. La fuente se muestra como LIVE solo al completar el descubrimiento; los resultados anteriores quedan señalados como desactualizados si falla la sincronización. El alcance del token está limitado a su equipo. El historial de despliegues, builds y asociación con contenedores aún no están implementados. Consulta la [guía de despliegue](docs/deployment-coolify.md#integración-coolify-alcance-y-validación) para requisitos de acceso y limitaciones.
 
 ### Acceso seguro a Docker
 

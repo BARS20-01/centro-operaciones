@@ -48,6 +48,14 @@ export interface TwinNode {
   repositoryUrl?: string
   updatedAt?: string
   source?: 'live' | 'simulated'
+  sourceSystem?: 'docker' | 'coolify'
+  stale?: boolean
+  projectName?: string
+  environmentName?: string
+  currentStatus?: string
+  publicUrl?: string
+  deploymentStatus?: string
+  deploymentTime?: string
   image?: string
   ports?: string[]
   networks?: string[]

@@ -129,7 +129,7 @@ export function useMockOps() {
     }, 2000)
 
     const feed = setInterval(() => {
-      setState((prev) => withEvents(prev, routineEvent(Object.values(prev.snapshot.graph.nodes))))
+      setState((prev) => withEvents(prev, routineEvent(Object.values(prev.snapshot.graph.nodes).filter((node) => node.source !== 'live'))))
     }, 1800)
 
     const security = setInterval(() => {
@@ -168,6 +168,8 @@ export function useMockOps() {
 
     let disposed = false
     let discovery: ReturnType<typeof setTimeout>
+    let coolifyTimer: ReturnType<typeof setTimeout>
+    let coolifyFailed = false
     const poll = async () => {
       const source = integrations.docker
       if (!source.discover) return
@@ -213,6 +215,57 @@ export function useMockOps() {
     }
     void poll()
 
+    const pollCoolify = async () => {
+      try {
+        const result = await integrations.coolify.discover!()
+        if (disposed) return
+        coolifyFailed = false
+        setState((prev) => {
+          const report = mergeDiscovery(prev.snapshot.graph, result)
+          if (report.rejected.length) console.warn('Coolify graph discovery rejected entries:', report.rejected.length)
+          if (report.graph === prev.snapshot.graph) return prev
+          const events: OpsEvent[] = []
+          for (const node of result.nodes ?? []) {
+            const old = prev.snapshot.graph.nodes[node.id]
+            if (!old || old.sourceSystem !== 'coolify' || node.category !== 'Coolify application') continue
+            if (old.currentStatus?.startsWith('exited') && node.currentStatus?.startsWith('running')) {
+              events.push(mkEvent({ source: node.name, severity: 'success', category: 'applications', message: 'Application Started (transición observada)' }))
+            } else if (old.currentStatus?.startsWith('running') && node.currentStatus?.startsWith('exited')) {
+              events.push(mkEvent({ source: node.name, severity: 'warn', category: 'applications', message: 'Application Stopped (transición observada)' }))
+            }
+            if (!old.deploymentStatus && node.deploymentStatus) {
+              events.push(mkEvent({ source: node.name, severity: 'info', category: 'applications', message: 'Deployment Started (detectado en ejecución)' }))
+            } else if (old.deploymentStatus !== node.deploymentStatus && node.deploymentStatus?.includes('fail')) {
+              events.push(mkEvent({ source: node.name, severity: 'error', category: 'applications', message: 'Deployment Failed (estado observado)' }))
+            }
+          }
+          const kpis = prev.snapshot.kpis.map((k) => k.id === 'services' ? servicesKpi(report.graph, k) : k)
+          const next = { ...prev, snapshot: { graph: report.graph, kpis } }
+          return events.length ? withEvents(next, ...events) : settle(next)
+        })
+      } catch {
+        if (disposed) return
+        if (!coolifyFailed) {
+          coolifyFailed = true
+          console.warn('Coolify discovery unavailable')
+          setState((prev) => {
+            const nodes = Object.values(prev.snapshot.graph.nodes)
+              .filter((node) => node.sourceSystem === 'coolify')
+              .map((node) => ({ ...node, stale: true, status: node.id === 'coolify' ? 'warn' as const : node.status }))
+            const root = prev.snapshot.graph.nodes.coolify
+            if (root && !nodes.some((node) => node.id === root.id)) {
+              nodes.push({ ...root, origin: 'discovered', source: 'simulated', sourceSystem: 'coolify', stale: true, status: 'warn' })
+            }
+            const report = mergeDiscovery(prev.snapshot.graph, { nodes })
+            return withEvents({ ...prev, snapshot: { ...prev.snapshot, graph: report.graph } },
+              mkEvent({ source: 'Coolify', severity: 'warn', category: 'infrastructure', message: 'Error de sincronización Coolify' }))
+          })
+        }
+      }
+      if (!disposed) coolifyTimer = setTimeout(pollCoolify, 30_000)
+    }
+    void pollCoolify()
+
     return () => {
       disposed = true
       clearInterval(metrics)
@@ -220,6 +273,7 @@ export function useMockOps() {
       clearInterval(security)
       clearInterval(incidents)
       clearTimeout(discovery)
+      clearTimeout(coolifyTimer)
     }
   }, [])
 
