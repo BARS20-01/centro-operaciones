@@ -137,10 +137,62 @@ Define las variables interpoladas por el Compose en la configuración de variabl
 | `PROXMOX_API_TOKEN` | API, runtime | Secreto con formato `usuario@realm!tokenid=secreto`, sin el prefijo `PVEAPIToken=`. Solo backend; no usar variables `VITE_`. |
 | `PROXMOX_MODE` | API, runtime | `live` por defecto; `simulated` desactiva consultas reales y entrega un inventario vacío identificado explícitamente como simulado. No es un fallback automático. |
 | `PROXMOX_DIAGNOSTICS_LOG` | API, runtime | `false` por defecto. `true` habilita temporalmente trazas de requests, respuestas, parsing y descubrimiento sin valores de inventario ni credenciales. |
+| `PROXMOX_CA_PATH` | Compose, host | Ruta absoluta al PEM de CA confiable en el host Docker; por defecto `/etc/nexus-prime/certs/proxmox-ca.pem`. El archivo debe existir antes del despliegue. |
 
 Las variables `VITE_*` se consumen como argumentos de build; un cambio requiere reconstruir y desplegar el frontend. Se recomienda conservar las rutas relativas por defecto para usar el mismo origen HTTPS y el proxy Nginx existente.
 
 ### Proxmox LIVE
+
+#### CA y TLS en VPS-WEB
+
+El Compose monta `PROXMOX_CA_PATH` como archivo de solo lectura en `/run/nexus-prime/proxmox-ca.pem` y configura `NODE_EXTRA_CA_CERTS` para Node. **El montaje es obligatorio para este Compose, incluso si Proxmox está desactivado:** crea el archivo antes de desplegar; si falta, el contenedor API no arrancará. Si no se usa una CA adicional en otra instalación, proporciona allí un PEM de CA confiable apropiado o adapta el Compose de esa instalación. Node debe poder leerlo como usuario no root. La CA se agrega a la confianza de todo el proceso Node, no solo a Proxmox.
+
+1. Identifica el certificado servido por Proxmox y su CA. Si usa el certificado predeterminado de Proxmox VE, la CA pública es `/etc/pve/pve-root-ca.pem`; si usa un certificado personalizado o ACME, utiliza la CA emisora real y asegúrate de que el servidor entregue los intermediarios necesarios. No copies claves privadas. En el nodo Proxmox, obtiene la huella de la CA por un canal administrativo confiable:
+
+   ```sh
+   openssl x509 -in /etc/pve/pve-root-ca.pem -noout -subject -issuer -fingerprint -sha256
+   ```
+
+2. Desde VPS-WEB, copia la CA pública mediante SSH autenticado; reemplaza `USUARIO_ADMIN` por una cuenta autorizada a leer el archivo:
+
+   ```sh
+   scp USUARIO_ADMIN@10.91.32.30:/etc/pve/pve-root-ca.pem /tmp/nexus-proxmox-ca.pem
+   openssl x509 -in /tmp/nexus-proxmox-ca.pem -noout -subject -issuer -fingerprint -sha256
+   ```
+
+   Compara la huella con la obtenida en el nodo por un canal confiable. No instales la CA si no coinciden. Para una CA distinta, reemplaza la ruta de origen y verifica su huella de la misma manera.
+
+3. En VPS-WEB, instala el PEM comprobado sin sobrescribir una CA existente inadvertidamente:
+
+   ```sh
+   sudo install -d -m 755 /etc/nexus-prime/certs
+   sudo test ! -e /etc/nexus-prime/certs/proxmox-ca.pem
+   ```
+
+   Solo si el último comando finaliza correctamente:
+
+   ```sh
+   sudo install -m 644 /tmp/nexus-proxmox-ca.pem /etc/nexus-prime/certs/proxmox-ca.pem
+   ```
+
+   Si ya existe, verifica su contenido y coordina su reemplazo; un archivo montado individualmente puede requerir recrear el contenedor tras su rotación. Borra el archivo temporal de forma controlada una vez verificada la instalación.
+
+4. Publica y despliega la revisión que contiene el montaje; recrea `nexus-prime-api`. `NODE_EXTRA_CA_CERTS` se lee al iniciar Node. Confirma que el PEM sea legible dentro del contenedor y revisa sus logs por advertencias de carga. El certificado del servidor debe ser válido para el nombre o IP de `PROXMOX_URL`; importar la CA no corrige un SAN incorrecto. No uses `NODE_TLS_REJECT_UNAUTHORIZED=0` ni desactives la verificación TLS.
+
+5. Dentro de `nexus-prime-api`, verifica primero sin enviar token:
+
+   ```sh
+   node -e "fetch(new URL('/api2/json/version', process.env.PROXMOX_URL), {redirect:'manual',signal:AbortSignal.timeout(15000)}).then(r=>console.log('HTTP',r.status)).catch(e=>{console.error('TLS/transport error:',e.name,e.cause?.code ?? 'unknown');process.exitCode=1})"
+   ```
+
+   Solo si devuelve `200` o `401`, comprueba la autenticación sin imprimir el token ni el cuerpo:
+
+   ```sh
+   set +x
+   node -e "fetch(new URL('/api2/json/cluster/resources',process.env.PROXMOX_URL),{headers:{Accept:'application/json',Authorization:'PVEAPIToken='+process.env.PROXMOX_API_TOKEN},redirect:'error',signal:AbortSignal.timeout(15000)}).then(r=>{console.log('HTTP',r.status);if(!r.ok)process.exitCode=1}).catch(e=>{console.error('Request error:',e.name,e.cause?.code ?? 'unknown');process.exitCode=1})"
+   ```
+
+   `200` confirma esa consulta autenticada, no necesariamente inventario completo. Si TLS falla, corrige la confianza, cadena o identidad del certificado antes de enviar el token. Si el primer paso devuelve otro estado, investígalo antes de continuar.
 
 Define ambas variables en Coolify y despliega la revisión que incorpora el transporte. Usa un token dedicado de solo lectura y limita su alcance al inventario autorizado; para consultar contenido de storage la API requiere `Datastore.Audit` o el privilegio más amplio `Datastore.AllocateSpace`, por lo que se prefiere `Datastore.Audit`. Configura también los permisos de auditoría de nodos y VMs necesarios en la versión y ACL de la instalación; con separación de privilegios, tanto el usuario como el token deben tener acceso. Proxmox puede filtrar recursos por ACL sin error: un 200 no demuestra inventario completo. Nunca concedas permisos de modificación para esta integración.
 

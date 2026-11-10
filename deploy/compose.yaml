@@ -40,6 +40,14 @@ services:
       PROXMOX_API_TOKEN: ${PROXMOX_API_TOKEN:-}
       PROXMOX_MODE: ${PROXMOX_MODE:-live}
       PROXMOX_DIAGNOSTICS_LOG: ${PROXMOX_DIAGNOSTICS_LOG:-false}
+      NODE_EXTRA_CA_CERTS: /run/nexus-prime/proxmox-ca.pem
+    volumes:
+      - type: bind
+        source: ${PROXMOX_CA_PATH:-/etc/nexus-prime/certs/proxmox-ca.pem}
+        target: /run/nexus-prime/proxmox-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
     expose:
       - "3001"
     depends_on:
