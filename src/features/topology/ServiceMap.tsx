@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react'
-import { MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Node } from '@xyflow/react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { MarkerType, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow, type Node } from '@xyflow/react'
 import { relatedSet } from '@/domain/analysis'
 import { CORE_ID } from '@/domain/graph'
 import { criticalityOf, HEALTH_LEVELS, type HealthReport } from '@/domain/health'
@@ -13,6 +13,7 @@ import { ClusterNode, type ClusterNodeType } from './ClusterNode'
 import { CoreNode, type CoreNodeType } from './CoreNode'
 import { FlowEdge, type FlowEdgeType } from './FlowEdge'
 import { Inspector } from './Inspector'
+import { reconcileNodes } from './reconcileNodes'
 import {
   computeHomelabLayout,
   computeKnowledgeLayout,
@@ -60,7 +61,7 @@ function Canvas({
 }) {
   const ui = useTwinView(graph)
   const { readings } = useOperationalStatus()
-  const { fitView } = useReactFlow()
+  const { fitView, getEdges, getInternalNode } = useReactFlow()
   const model = report.model
 
   const related = useMemo(() => (ui.selectedId ? relatedSet(graph, ui.selectedId) : null), [graph, ui.selectedId])
@@ -84,7 +85,7 @@ function Canvas({
     return c
   }, [graph, model])
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes: nextNodes, edges } = useMemo(() => {
     const nodes: Node[] = []
     const edges: FlowEdgeType[] = []
     const dimmed = (id: string) => !!related && !related.has(id)
@@ -218,6 +219,35 @@ function Canvas({
     return { nodes, edges }
   }, [graph, model, report.nexus.level, view, layout, related, ui.selectedId, mode, orientation, readings])
 
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  useLayoutEffect(() => {
+    setNodes((current) => reconcileNodes(nextNodes, current))
+  }, [nextNodes, setNodes])
+
+  const lastTrace = useRef('')
+  const canvasRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const timer = setTimeout(() => {
+      const trace = {
+        graphNodes: Object.keys(graph.nodes).sort(),
+        graphHosts: Object.values(graph.nodes).filter((node) => node.parentId).map((node) => `${node.parentId}>${node.id}`).sort(),
+        graphDependencies: graph.dependencies.map((edge) => edge.id).sort(),
+        visibleNodes: nodes.map((node) => node.id).sort(),
+        calculatedEdges: edges.map((edge) => edge.id).sort(),
+        flowEdges: getEdges().map((edge) => edge.id).sort(),
+        renderedEdges: [...(canvasRef.current?.querySelectorAll('.react-flow__edge') ?? [])].map((edge) => edge.getAttribute('data-id')).sort(),
+        nodesWithoutHandles: nodes.filter((node) => !getInternalNode(node.id)?.internals.handleBounds).map((node) => node.id).sort(),
+      }
+      const signature = JSON.stringify(trace)
+      if (signature !== lastTrace.current) {
+        console.debug('Topology reconciliation (development)', { previous: lastTrace.current ? JSON.parse(lastTrace.current) : null, current: trace })
+        lastTrace.current = signature
+      }
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [graph, nodes, edges, getEdges, getInternalNode])
+
   // Until the user takes over the camera, keep the whole map framed as nodes are discovered.
   const nodeCount = nodes.length
   useEffect(() => {
@@ -247,10 +277,11 @@ function Canvas({
             onSourceFilter={ui.filterSource}
           />
         </div>
-        <div className="relative min-h-0 flex-1">
+        <div ref={canvasRef} className="relative min-h-0 flex-1">
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            onNodesChange={onNodesChange}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             nodeOrigin={[0.5, 0.5]}
