@@ -1,5 +1,5 @@
 import type { TwinView } from './view'
-import { CORE_ID } from '@/domain/graph'
+import { CORE_ID } from '../../domain/graph'
 import type { Health, Layer, Topology } from '@/types'
 
 export interface Size {
@@ -152,7 +152,7 @@ export function computeKnowledgeLayout(view: TwinView, topology: Topology, sizeO
     ids.sort((a, b) => {
       if (a === CORE_ID) return -1
       if (b === CORE_ID) return 1
-      return a.localeCompare(b)
+      return a < b ? -1 : a > b ? 1 : 0
     })
     ids.forEach((id, row) => {
       const size = sizeOf(id)
@@ -180,16 +180,17 @@ export function computeHomelabLayout(view: TwinView, sizeOf: (id: string) => Siz
 export function computeOperationsLayout(view: TwinView, health: ReadonlyMap<string, Health>, sizeOf: (id: string) => Size): Layout {
   const priority: Record<Health, number> = { critical: 0, offline: 1, impacted: 2, warn: 3, ok: 4 }
   const ids = view.order.filter((id) => id !== CORE_ID)
-  ids.sort((a, b) => (priority[health.get(a) ?? 'ok'] - priority[health.get(b) ?? 'ok']) || a.localeCompare(b))
+  ids.sort((a, b) => (priority[health.get(a) ?? 'ok'] - priority[health.get(b) ?? 'ok']) || (a < b ? -1 : a > b ? 1 : 0))
 
   const columns = Math.max(1, Math.ceil(Math.sqrt(ids.length)))
   const size = ids.length ? sizeOf(ids[0]) : NODE_SIZE
   const gapX = 28
   const gapY = 20
-  const gridWidth = Math.max(sizeOf(CORE_ID).w, columns * size.w + Math.max(0, columns - 1) * gapX)
+  const hasCore = view.parent.has(CORE_ID)
+  const coreSize = hasCore ? sizeOf(CORE_ID) : { w: 0, h: 0 }
+  const gridWidth = Math.max(coreSize.w, columns * size.w + Math.max(0, columns - 1) * gapX)
   const boxes = new Map<string, Box>()
-  const coreSize = sizeOf(CORE_ID)
-  boxes.set(CORE_ID, { ...coreSize, x: gridWidth / 2, y: coreSize.h / 2 })
+  if (hasCore) boxes.set(CORE_ID, { ...coreSize, x: gridWidth / 2, y: coreSize.h / 2 })
 
   ids.forEach((id, index) => {
     const nodeSize = sizeOf(id)

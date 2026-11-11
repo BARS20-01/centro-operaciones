@@ -3,7 +3,9 @@
 **Engineering Operations Nexus**  
 Digital Twin Platform para visualizar infraestructura, servicios, aplicaciones y laboratorios desde un Command Center.
 
-> **Release candidate actual: v0.6.1-alpha.** Build, lint y pruebas locales pasan; el despliegue y Docker LIVE todavía requieren validación en VPS-WEB. La API Express consulta Docker mediante una CLI conectada a un Docker Socket Proxy con permisos de solo lectura; si la API no está disponible, el adaptador usa datos simulados. El grafo inicial, los KPI generales, los incidentes y la línea de tiempo siguen siendo simulados. La API no implementa autenticación propia. Los indicadores no sustituyen herramientas de monitorización de producción.
+> **Versión de trabajo: v0.7.0-alpha.** Según la validación comunicada en VPS-WEB, Docker LIVE y Coolify LIVE están **VALIDATED**; Proxmox LIVE está **VALIDATION IN PROGRESS**. La integración Proxmox está implementada y TLS fue validado, pero la autenticación y el inventario real aún no están confirmados. Esta versión incluye cambios locales pendientes de publicación y no constituye una certificación de producción.
+
+El grafo de Operations Center mezcla fuentes reales y simuladas; KPI generales, historial e incidentes simulados no deben confundirse con telemetría real. La API no implementa autenticación propia y requiere protección externa.
 
 ## Visión
 
@@ -24,7 +26,7 @@ La aplicación presenta un Service Map, indicadores globales, un Inspector y una
 - **Monitoring Platform:** consolidar indicadores y eventos en una vista operacional.
 - **Future Operational Intelligence:** evolucionar hacia análisis con fuentes reales y contexto histórico.
 
-Estos objetivos se encuentran en distintas etapas: la implementación actual combina simulación con un adaptador Docker preparado para un endpoint externo.
+Estos objetivos se encuentran en distintas etapas: Operations Center combina simulación con descubrimiento Docker, Coolify y Proxmox.
 
 ## Componentes
 
@@ -34,9 +36,11 @@ Estos objetivos se encuentran en distintas etapas: la implementación actual com
 | Discovery Engine | Contrato de descubrimiento y combinación de nodos y relaciones. |
 | Operational Health Engine | Estado efectivo, NEXUS HEALTH y Operational Score. |
 | Service Map | Visualización del grafo, filtros, ramas e Inspector. |
-| Mission Console | Flujo y filtros de eventos simulados. |
+| Mission Console | Flujo de eventos con procedencia LIVE o SIMULATED. |
 | Timeline | Resumen temporal de eventos por categoría. |
 | Docker Integration Adapter | Descubrimiento mediante HTTP normalizado o simulación. |
+| Coolify Integration | Proyectos, entornos, recursos y despliegues activos. |
+| Proxmox Integration | Hosts, VMs, contenedores, almacenamiento, snapshots y backups, sujeto a permisos y validación. |
 
 ## View Modes
 
@@ -68,51 +72,36 @@ Las vistas de ejemplo se identifican como **SIMULATED · MOCK DATA** y no realiz
 
 ## Theme Engine
 
-El dashboard ofrece cinco identidades visuales intercambiables desde el encabezado: NEXUS, ALTAIR, OBSIDIAN, HELIX y UNAB. `ThemeProvider` guarda la selección en `localStorage` y actualiza tokens CSS semánticos sin cambiar la fuente de datos, el modo operacional ni el cálculo de layouts.
+La plataforma ofrece cinco identidades visuales intercambiables desde el encabezado: NEXUS, ALTAIR, OBSIDIAN, HELIX y UNAB. `ThemeProvider` guarda la selección en `localStorage` y actualiza tokens CSS semánticos sin cambiar la fuente de datos, el modo operacional ni el cálculo de layouts.
 
-Los tokens compartidos incluyen fondo, superficie, primario, secundario, éxito, advertencia, error, glow y conexiones. Los metadatos de contexto del Inspector son opcionales para mantener compatibilidad con entidades existentes. `KnowledgeEntity` y `KnowledgeRelation` definen contratos desacoplados para una futura vista de Knowledge Graph; esa vista aún no está implementada.
+Los tokens compartidos incluyen fondo, superficie, primario, secundario, éxito, advertencia, error, glow y conexiones. El Knowledge Core del workspace AI es una visualización conceptual simulada, no una integración de inteligencia artificial.
 
 ## Arquitectura actual
 
 ```text
-  Datos iniciales y simulación                 Docker Integration
-  src/data/mock.ts + useMockOps                HTTP o simulador
-             |                                      |
-             |                          discover() + espera de 5 s
-             |                                      |
-             |                  Express API <-- Docker CLI (host)
-             |                         |
-             |                    HTTP normalizado
-             |                         |
-             +------------------+-------------------+
-                                v
-                     mergeDiscovery / TwinGraph
-                     nodos + hosts + dependencias
-                                |
-              +-----------------+-----------------+
-              v                 v                 v
-        análisis de impacto   assess()       eventos en memoria
-        y causas raíz         salud y score        |
-              |                 |                  v
-              +--------+--------+          Mission Console
-                       v                   y Timeline
-                Dashboard React
-          KPI + HealthStrip + Service Map
-                       |
-              selección de nodo
-                       v
-                   Inspector
+  Navegador / Workspace Engine
+    ├── Operations Center: TwinGraph, salud, RCA, Mission Console
+    └── Security, Digital Twin, AI, Executive, Homelab: vistas simuladas
+                    │ /api, mismo origen
+                    ▼
+             Nginx → Express API
+                       ├── Docker CLI → Socket Proxy → Docker Engine
+                       ├── Coolify API
+                       └── Proxmox API (HTTPS con CA confiable)
+
+  Simulación + descubrimiento → mergeDiscovery → TwinGraph
+                               → salud, impacto y vistas operacionales
 ```
 
-`useMockOps` conserva el estado en memoria, actualiza KPI simulados cada 2 segundos, genera eventos e incidentes y consulta el adaptador Docker. El sondeo se programa cinco segundos después de completar cada consulta. `settle()` recalcula el informe de salud a partir del grafo, los KPI, los eventos y el historial de puntuación. Recargar la página reinicia ese estado.
+`useMockOps` conserva el estado en memoria, actualiza KPI simulados y consulta Docker, Coolify y Proxmox. Docker se sondea cinco segundos después de cada consulta; Coolify y Proxmox, cada 30 segundos. `settle()` recalcula el informe de salud a partir del grafo, los KPI, los eventos y el historial de puntuación. Recargar la página reinicia ese estado.
 
 ### Stack y estructura
 
-React, TypeScript y Vite; Tailwind CSS para estilos, Framer Motion para animaciones, `@xyflow/react` para el grafo, Lucide para iconos y React Router para la navegación. La API utiliza Node.js, Express y la CLI de Docker.
+React, TypeScript y Vite; Tailwind CSS, Framer Motion, React Three Fiber y Drei para las experiencias visuales, `@xyflow/react` para el grafo, Lucide para iconos y React Router para la navegación. La API utiliza Node.js, Express y la CLI de Docker.
 
 ```text
 src/
-  app/                 Router: dashboard y página 404
+  app/                 Router, workspaces y diagnóstico
   data/mock.ts         Topología, KPI e historial simulados
   domain/              Grafo, análisis, salud y timeline
   features/
@@ -121,8 +110,9 @@ src/
     console/           Mission Console
     timeline/          Resumen temporal de eventos
     dashboard/         Tarjetas KPI
-  hooks/useMockOps.ts  Simulación, sondeo Docker y estado
-  integrations/        Contratos, registry y adaptador Docker
+  hooks/useMockOps.ts  Simulación, sondeo de integraciones y estado
+  integrations/        Adaptadores Docker, Coolify y Proxmox
+  workspaces/          Selector y experiencias operacionales
   pages/               Composición de la página
   types/               Tipos del dominio
 server/                API Express y recopilación mediante Docker CLI
@@ -162,9 +152,27 @@ Las relaciones de hosting y de dependencia tienen semánticas distintas. La visu
 
 ## NEXUS CORE
 
-NEXUS CORE es el nodo central visual, con identificador interno `vps-web` y host Proxmox. Sus anillos y pulsos representan el núcleo del mapa. Su color y etiqueta reflejan el nivel global de NEXUS HEALTH; no implican que exista telemetría real del VPS. Es un nodo fijado en la vista incluso al filtrar capas.
+NEXUS CORE es el nodo central visual, con identificador interno `vps-web` y host Proxmox. Sus anillos y pulsos representan el núcleo del mapa. Su color y etiqueta reflejan el nivel global de NEXUS HEALTH; no implican que exista telemetría real del VPS. Es un nodo fijado al filtrar capas, pero respeta el filtro de origen.
 
 ## Discovery Engine
+
+### Topology sources and duplicate investigation
+
+Operations Center starts from a simulated seed, then merges Docker, Coolify and Proxmox discovery by node ID. It is intentionally a mixed graph: simulated seed nodes remain unless a discovery source explicitly updates the same ID. Docker can also fall back to simulated containers. The separate Digital Twin workspace uses its own mock topology and is not the LIVE Operations Center graph.
+
+The previous Proxmox adapter generated both a synthetic `proxmox` root and `proxmox-node/proxmox` for the real node. The seed already had `proxmox`, so a LIVE response for node `proxmox` produced two Proxmox-labelled entries, not evidence of two hosts. The adapter now maps that explicitly known host to `proxmox`, replacing the seed with its LIVE reading, and keeps other actual hosts as separate roots. VM 200 is mapped to `vps-web` only when reported on `proxmox`.
+
+Proxmox storage resources are represented as separate nodes with IDs `proxmox-storage/<node>/<storage>`. Therefore `local` and `local-lan` can appear when returned as storage names by the Proxmox API; they are not generated by the seed or a second Proxmox host. Their exact origin in a particular deployment must be checked against its discovery response and node category; the repository alone cannot prove the contents of production. Do not remove storage solely because its label resembles another resource.
+
+Proxmox identity is derived from the normalized resource ID and verified against type, node, VMID and storage name. Identical repeated records collapse; conflicting records for the same identity fail discovery rather than arbitrarily selecting one. Duplicate labels alone are not sufficient evidence for deduplication: separate hosts, storage pools, and resources from different providers can legitimately share a name. Graph roots, children and dependencies use stable ID ordering; equal inputs produce the same structural layout order, but different LIVE inventories, simulated telemetry, health states, filtering or view modes can still produce different results.
+
+In a Vite development build, open browser developer tools and expand **Topology sources (development)** to see node IDs, labels, providers, source modes, parents and categories. A warning lists duplicate labels with their IDs and providers; it does not claim that they are the same resource. The log updates only when these fields change. These logs are disabled in production builds and can contain infrastructure names, so handle screenshots and console exports accordingly. To confirm the reported production case, inspect the authorized `/api/proxmox/discovery` response and compare its `resources` IDs, types, names and nodes; do not share API tokens.
+
+### Clasificación de fuentes
+
+En Operations Center los nodos de integraciones muestran el estado compartido del Source Manager: `LIVE`, `PARTIAL`, `OFFLINE` o `UNKNOWN`. La salud del recurso se muestra por separado: un contenedor detenido no implica que Docker esté desconectado. El Inspector muestra también la procedencia real del recurso y si está desactualizado. Para entidades sin integración se conserva la clasificación por procedencia. Los filtros **Todo**, **Solo LIVE** y **Solo SIMULATED** seleccionan por procedencia y no modifican el cálculo global de salud.
+
+Las identidades explícitas compartidas para Docker, Coolify, el host Proxmox conocido y VM 200 permiten que una lectura LIVE sustituya al nodo simulado del mismo ID. El resto de nodos simulados se conserva. No se suprimen entidades de otros proveedores solo por coincidir en nombre: se necesita una identidad verificable para evitar ocultar servicios o hosts distintos. Mission Console y Timeline indican la procedencia de cada evento, independientemente de que el flujo esté activo. System Diagnostics enumera fuentes LIVE, simuladas y fuentes sin integración LIVE disponible; las comprobaciones pendientes no se presentan como fallos confirmados.
 
 [`DiscoverySource`](src/integrations/types.ts) define `discover(): Promise<DiscoveryResult>`. El resultado puede contener nodos, dependencias y IDs eliminados. [`mergeDiscovery`](src/domain/graph.ts) incorpora las novedades al grafo:
 
@@ -173,7 +181,7 @@ NEXUS CORE es el nodo central visual, con identificador interno `vps-web` y host
 - Al eliminar un nodo, elimina su subárbol alojado y las dependencias asociadas.
 - Mantiene el índice `topology` en cambios no estructurales. La vista y el layout están memoizados respecto a la topología y los filtros, evitando recalcular el layout por cada cambio de estado o métricas.
 
-El contrato admite otras fuentes, pero **solo Docker está conectado al sondeo de `useMockOps`**. Registrar un adaptador adicional no inicia su descubrimiento automáticamente: también debe conectarse al flujo de sondeo o de ingestión.
+Docker, Coolify y Proxmox están conectados al sondeo de `useMockOps`. Registrar otro adaptador no inicia su descubrimiento automáticamente: también debe conectarse al flujo de sondeo o de ingestión.
 
 ## Operational Health Engine
 
@@ -245,7 +253,7 @@ Para ensayar el mapa con nodos adicionales se puede abrir `/?stress=200`, `/?str
 
 ## Docker Integration
 
-En desarrollo, System Diagnostics usa un proxy independiente. Para validar el VPS-WEB desde este equipo, crea `.env.local` (ignorado por Git) con `NEXUS_DIAGNOSTICS_API_TARGET=http://nexus-prime.10.91.32.32.sslip.io` y reinicia Vite si no se reinicia automáticamente. La pantalla muestra el origen seleccionado; sin esa variable usa `http://127.0.0.1:3001`. Este ajuste no cambia el destino `/api` del Digital Twin ni el comportamiento de producción, que continúa usando el mismo origen. El destino indicado usa HTTP: úsalo solo en una red de confianza; protege la API y usa HTTPS para acceso externo.
+En desarrollo, Diagnostics y la API operacional usan el mismo proxy `/api`. Configura `NEXUS_API_TARGET` en `.env.local` (ignorado por Git) con el origen HTTP(S) de la API del entorno elegido y reinicia Vite; sin esa variable se usa `http://127.0.0.1:3001`. La antigua variable `NEXUS_DIAGNOSTICS_API_TARGET` ya no selecciona un destino: migra su valor explícitamente si deseas que **toda** la aplicación consulte esa API. Usar un destino remoto puede consultar infraestructura real; usa HTTPS para acceso externo y protege la API. En producción, `/api` continúa usando el proxy del despliegue.
 
 [`docker.integration.ts`](src/integrations/docker.integration.ts) implementa `Integration` y `DockerTransport`. Por defecto consulta desde el navegador:
 
@@ -254,7 +262,7 @@ GET /api/docker/containers
 Accept: application/json
 ```
 
-La integración consulta `GET /api/docker/containers` y `GET /api/docker/stats`. `VITE_DOCKER_API_URL` y `VITE_DOCKER_STATS_URL` permiten configurar ambas URLs **en tiempo de build**; por defecto se usan las rutas anteriores. El endpoint de contenedores devuelve un arreglo normalizado, no la respuesta nativa del Docker Engine:
+La integración consulta `GET /api/docker/containers` y `GET /api/docker/stats` a través del mismo origen `/api` que Diagnostics. Las antiguas variables `VITE_DOCKER_API_URL` y `VITE_DOCKER_STATS_URL` solo admiten esas rutas predeterminadas; otros valores detienen el build para evitar fuentes contradictorias. El endpoint de contenedores devuelve un arreglo normalizado, no la respuesta nativa del Docker Engine:
 
 ```json
 [
@@ -284,29 +292,49 @@ Los estados aceptados son `running`, `restarting`, `paused`, `exited` y `dead`. 
 
 El backend ejecuta `docker ps --all`, `docker inspect` y `docker stats --no-stream`: lista todos los contenedores y recopila CPU y memoria de los que están ejecutándose. Para los detenidos informa métricas de CPU y memoria cero. El inicio obtenido mediante `inspect` permite al adaptador calcular el uptime. Las imágenes, nombres, puertos y redes proceden de Docker; no hay una lista fija de contenedores reales. Las respuestas concurrentes de ambos endpoints comparten una misma recopilación en curso.
 
-La petición tiene un timeout de 40 segundos; cada comando Docker tiene un límite de 12 segundos. Los IDs se inspeccionan y consultan en lotes de 100. Si la API falla o devuelve datos inválidos, el adaptador usa el simulador y espera al menos 30 segundos antes de reintentar HTTP. La barra del mapa indica **Docker: LIVE** o **SIMULATED**, además de `CHECKING` durante la primera consulta y `UNAVAILABLE` si también falla la simulación. El indicador se refiere exclusivamente a Docker, no a los KPI y eventos generales.
+La petición tiene un timeout de 40 segundos; cada comando Docker tiene un límite de 12 segundos. Los IDs se inspeccionan y consultan en lotes de 100. Si la API falla o devuelve datos inválidos, el adaptador puede usar el simulador en LOCAL y STAGING y espera al menos 30 segundos antes de reintentar HTTP; el estado compartido es PARTIAL y Diagnostics indica el origen simulado. En PRODUCTION y UNKNOWN el fallback está deshabilitado.
 
 La API devuelve HTTP 503 ante fallos de la CLI o datos incompletos; los detalles se registran en el servidor. Es de solo lectura, no acepta comandos Docker desde el cliente, no habilita CORS y configura respuestas `no-store` y encabezados de seguridad. Escucha por defecto en `127.0.0.1:3001`; para enlazar una interfaz remota se requieren `API_HOST` y `API_ALLOW_REMOTE=true`. No la expongas directamente a Internet ni expongas el socket Docker: una API remota requiere un proxy con autenticación y TLS. La cuenta que ejecuta la API necesita acceso al daemon Docker, privilegio equivalente a control elevado del host.
 
-La respuesta Docker real no ha podido validarse contra un daemon en el entorno de desarrollo actual porque la CLI Docker no está instalada; las pruebas cubren la normalización mediante fixtures. Antes de declarar el despliegue operativo, ejecutar el backend en VPS-WEB y comprobar `/api/docker/containers`, `/api/docker/stats` y el indicador `LIVE` desde el dashboard.
+Docker LIVE fue validado en VPS-WEB según el resultado comunicado. Las pruebas locales mediante fixtures son independientes de esa validación y no la sustituyen en un despliegue nuevo.
 
 ## Mission Console y Timeline
 
-La consola presenta eventos `info`, `success`, `warn` y `error`, con filtros por severidad. La pestaña Timeline muestra rangos de 5 minutos, 1 hora, 24 horas y 7 días, agrupados en infraestructura, aplicaciones, laboratorios y seguridad. Incluye histogramas y eventos recientes.
+Operational Status permanece en la barra superior con el estado compacto por integración y abre System Diagnostics como panel contextual; `/diagnostics` también sigue disponible. El panel concentra contadores, última sincronización y motivos. **LIVE** significa lectura real correcta; **PARTIAL**, comprobaciones incompletas, discrepancias o fallback simulado; **OFFLINE**, integración no disponible (no necesariamente servidor apagado); **UNKNOWN**, comprobación pendiente o inconclusa. El estado se comparte con Console, Timeline, topología e Inspector.
+
+El Source Manager comparte las lecturas e inventarios entre Diagnostics, Operations Center y el resumen del Digital Twin. `VITE_NEXUS_ENVIRONMENT` selecciona `LOCAL`, `STAGING` o `PRODUCTION`: LOCAL y STAGING permiten el fallback Docker simulado; PRODUCTION y UNKNOWN no lo permiten. Si Proxmox devuelve modo simulado en PRODUCTION o UNKNOWN, se muestra UNKNOWN. LOCAL es el valor predeterminado en Vite dev; una compilación sin configurar muestra UNKNOWN. Docker y Coolify se consultan de manera LIVE primero. El entorno no prueba por sí mismo que una fuente sea LIVE.
+
+El Data Source Consistency Check compara la lectura con el grafo operacional. Una mezcla LIVE/SIMULATED, un conteo Docker discordante, un nodo o una relación no aplicados, o un inventario incompleto producen PARTIAL con el motivo. No se generan eventos simulados para Docker, Coolify o Proxmox; las simulaciones de SGS, Wallboard, LabScreen y otras entidades siguen identificadas como simuladas. El mapa de demostración del workspace Digital Twin es simulado y oculta los equivalentes de fuentes LIVE o PARTIAL; para ver el grafo operacional utiliza Operations Center.
+
+**Last LIVE Sync** conserva la última fecha real conocida durante la sesión: `lastDiscovery` para Docker y `checkedAt` para Coolify y Proxmox; una lectura Proxmox PARTIAL puede estar incompleta. La fecha no implica que la fuente siga LIVE; `—` significa que no hay fecha real conocida. Las fechas se muestran en la zona horaria del navegador.
+
+Los conteos LIVE corresponden a recursos visibles y no certifican permisos ni inventario completo. La lectura Docker combina Diagnostics con el inventario operacional; si ambos no coinciden, se muestra PARTIAL. NEXUS HEALTH se basa en el grafo mixto y no implica que todas sus fuentes sean LIVE. Proxmox LIVE sigue en validación operativa.
+
+Mission Console mantiene una vista de terminal ampliable y contraíble, con filtros por severidad. Timeline ofrece una vista cronológica independiente con hora, fuente, origen, estado (severidad), categoría y evento; permite seleccionar 5 minutos, 1 hora, 24 horas o 7 días, con histogramas por categoría. Para limitar el volumen visual presenta hasta 40 eventos recientes por categoría; los totales incluyen todos los eventos del intervalo. En Operations Mode se muestra como panel separado y los filtros de la consola no alteran ese panel.
 
 Los eventos se guardan solo en memoria, con un máximo de 3.000; el historial inicial de siete días se genera de forma simulada. Las categorías de seguridad no representan un sistema real de auditoría o detección.
 
-## Future Integrations
+## Infrastructure Sources
 
-| Fuente | Situación actual | Trabajo futuro |
+| Fuente | Situación actual | Alcance y siguientes pasos |
 |---|---|---|
-| Docker | Backend CLI, endpoints de contenedores/estadísticas, adaptador HTTP y fallback simulado | Validación en un Docker Engine real y despliegue detrás de un proxy autenticado |
-| Proxmox | Entrada placeholder en registry | Adaptador para hosts y máquinas virtuales |
-| Coolify | Entrada placeholder en registry | Adaptador para despliegues y recursos |
+| Docker LIVE | **VALIDATED** en VPS-WEB, según reporte | Inventario y estadísticas mediante proxy de solo lectura; fallback simulado. |
+| Coolify LIVE | **VALIDATED** en VPS-WEB, según reporte | Proyectos, entornos, recursos y despliegues activos; no incluye historial completo. |
+| Proxmox LIVE | **VALIDATION IN PROGRESS** | Adaptador implementado; DNS y TLS validados según reporte, autenticación e inventario pendientes de confirmación. |
 | SGS, Wallboard, LabScreen | Entradas placeholder en registry | Adaptadores para estado y métricas de aplicaciones |
 | Inventario, licencias, proyectos estudiantiles | Sin adaptadores ni entradas en registry | Definir contratos, identificadores y relaciones |
 
 Las entradas placeholder responden `false` a `ping()` y no descubren nodos. Un adaptador futuro puede implementar `Integration` y `DiscoverySource`, producir `DiscoveryResult` y pasar sus resultados por `mergeDiscovery`; además necesita conectarse al mecanismo de ingestión correspondiente.
+
+## Operational Validation
+
+| Comprobación | Estado comunicado | Evidencia y límites |
+|---|---|---|
+| Docker LIVE | **VALIDATED** | Validación operativa reportada por el usuario; no verificada de nuevo desde este entorno. |
+| Coolify LIVE | **VALIDATED** | Validación operativa reportada por el usuario; no verificada de nuevo desde este entorno. |
+| Proxmox DNS y TLS | **VALIDATED** | `proxmox.unab.ccp` resolvió a `10.91.32.30` y la petición HTTPS devolvió HTTP 401 sin token, evidenciando conexión TLS; no demuestra autenticación. |
+| Proxmox LIVE | **VALIDATION IN PROGRESS** | Pendiente verificar token, permisos y datos de `/api/proxmox/health` y `/api/proxmox/discovery`. |
+| Revisión v0.7.0-alpha | **PENDIENTE** | Los cambios locales deben publicarse y verificarse en el despliegue; los resultados previos no certifican esta revisión. |
 
 ## Desarrollo local
 
@@ -379,17 +407,25 @@ Define las variables en el recurso Compose de Coolify. `VITE_*` se usan como bui
 |---|---|---|
 | `DOCKER_SOCKET_PROXY_IMAGE` | socket proxy | Opcional. El Compose usa por defecto `ghcr.io/tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459` (release v0.5.0). Si se sobrescribe, fijar un digest SHA-256 aprobado; no usar `latest`. |
 | `DOCKER_SOCKET_PATH` | socket proxy | `/var/run/docker.sock` por defecto; ruta del socket en el host Docker de Coolify. |
-| `VITE_DOCKER_API_URL` | web (build) | `/api/docker/containers` por defecto, mismo origen HTTPS. |
-| `VITE_DOCKER_STATS_URL` | web (build) | `/api/docker/stats` por defecto, mismo origen HTTPS. |
+| `VITE_DOCKER_API_URL` | web (build), legado | Solo se admite `/api/docker/containers`; configura el origen compartido en el proxy. |
+| `VITE_DOCKER_STATS_URL` | web (build), legado | Solo se admite `/api/docker/stats`; configura el origen compartido en el proxy. |
+| `VITE_NEXUS_ENVIRONMENT` | web (build) | `LOCAL`, `STAGING` o `PRODUCTION`; vacío en una compilación muestra `UNKNOWN`. Configurar explícitamente para cada entorno. |
 | `COOLIFY_URL` | API | Origen de la instancia Coolify, sin `/api/v1` ni credenciales; HTTPS recomendado. |
 | `COOLIFY_API_KEY` | API | Token secreto de lectura del equipo; configurar en Coolify, nunca en variables `VITE_*`. |
 | `COOLIFY_ALLOW_INSECURE_HTTP` | API | `false` por defecto. `true` autoriza HTTP sin cifrado solo tras aceptar el riesgo; consultar la guía. |
+| `PROXMOX_URL` | API | En VPS-WEB, `https://proxmox.unab.ccp:8006`, nombre incluido en el certificado. |
+| `PROXMOX_API_TOKEN` | API | Token secreto con permisos de lectura; configurar en Coolify y no exponer en frontend. |
+| `PROXMOX_MODE` | API | `live` por defecto. |
+| `PROXMOX_CA_PATH` | host/Compose | Archivo CA en el host, por defecto `/etc/nexus-prime/certs/proxmox-ca.pem`; se monta en solo lectura. |
+| `NODE_EXTRA_CA_CERTS` | API | Compose lo apunta al archivo CA montado; mantiene la validación TLS estricta. |
 | `DOCKER_HOST` | API | `tcp://nexus-prime-docker-proxy:2375`; no apuntar la API al socket del host. |
 | `API_HOST` | API | `0.0.0.0` dentro de la red privada Compose. |
 | `API_PORT` | API | `3001`. |
 | `API_ALLOW_REMOTE` | API | `true` solo dentro de la topología privada descrita. No publicar el puerto del backend. |
 
 El descubrimiento Coolify usa las variables runtime del backend y funciona independientemente de Docker. Expone al dashboard solo campos seleccionados de proyectos, entornos, recursos y despliegues activos. La fuente se muestra como LIVE solo al completar el descubrimiento; los resultados anteriores quedan señalados como desactualizados si falla la sincronización. El alcance del token está limitado a su equipo. El historial de despliegues, builds y asociación con contenedores aún no están implementados. Consulta la [guía de despliegue](docs/deployment-coolify.md#integración-coolify-alcance-y-validación) para requisitos de acceso y limitaciones.
+
+El Compose resuelve `proxmox.unab.ccp` mediante `extra_hosts` hacia `10.91.32.30` y añade la CA de Proxmox a la confianza de Node. La validación TLS permanece activa. Consulta las variables, los permisos y la validación en la [guía de despliegue](docs/deployment-coolify.md).
 
 ### Acceso seguro a Docker
 
@@ -408,43 +444,44 @@ El socket sigue siendo una interfaz de privilegio elevado, aunque solo se monte 
 5. Comprueba los healthchecks y logs; consulta desde un entorno autorizado `/api/health`, `/api/diagnostics`, `GET /api/docker/containers` y `GET /api/docker/stats` por el dominio web. Verifica los datos de contenedores esperados y que Diagnostics y el dashboard indiquen fuente `LIVE`.
 6. Si la API responde `503`, confirma primero conectividad API→proxy, el allowlist de `CONTAINERS`, compatibilidad de la CLI/Engine y los logs del backend. No soluciones el problema publicando el socket o el proxy.
 
-El build y los tests locales validan el código y fixtures, pero no sustituyen la prueba contra el Docker Engine real de VPS-WEB. Hasta completar esa comprobación, el despliegue LIVE debe considerarse pendiente de aceptación operativa.
+El build y los tests locales validan código y fixtures, pero no sustituyen las pruebas operativas de cada revisión desplegada. La validación Docker LIVE reportada corresponde al entorno probado, no certifica automáticamente esta versión de trabajo.
 
 ## Roadmap
 
 Objetivos propuestos, sujetos a cambios y sin fechas comprometidas:
 
-| Versión objetivo | Alcance previsto |
+| Horizonte | Alcance previsto |
 |---|---|
-| v0.6.0 | Docker LIVE: endpoints de contenedores y estadísticas, descubrimiento dinámico y metadatos de runtime; despliegue Compose y proxy de socket preparados, pendiente de validación en VPS-WEB. |
-| v0.6.1-alpha | Release candidate con System Diagnostics, healthchecks y checklist de despliegue; lista para validación operativa, aún no certificada para producción. |
-| v0.7.0 | Coolify Integration. |
-| v0.8.0 | Proxmox Integration. |
-| v0.9.0 | SGS & Wallboard Integration. |
-| v1.0.0 | Operational Digital Twin con fuentes reales y capacidades operacionales. |
+| v0.7.0-alpha, en preparación | Publicar y validar la revisión actual; completar autenticación, permisos e inventario Proxmox LIVE. |
+| Posterior, sin versión comprometida | Integraciones SGS, Wallboard y LabScreen; ampliar telemetría y cobertura de fuentes reales. |
+| Largo plazo | Digital Twin operacional con persistencia, controles de acceso, auditoría y modelos validados con telemetría real. |
 
 El camino hacia una operación real también requiere persistencia, autenticación, autorización, auditoría y validación de los modelos con telemetría real. Inventario, licencias, LabScreen y proyectos estudiantiles son candidatos para integraciones posteriores; no tienen una versión comprometida.
 
 ## Estado actual y publicación
 
-La versión preparada para validación es **v0.6.1-alpha**. `VERSION`, `package.json` y `package-lock.json` deben coincidir; consulta el [changelog](CHANGELOG.md), las [notas v0.5.0](docs/release-notes/v0.5.0.md) y las [notas v0.6.1-alpha](docs/release-notes/v0.6.1-alpha.md). La licencia está pendiente de decisión del propietario; la publicación en GitHub no concede por sí misma una licencia de uso.
+La versión de trabajo preparada para validación es **v0.7.0-alpha**. Consulta el [changelog](CHANGELOG.md), las [notas v0.7.0-alpha](docs/release-notes/v0.7.0-alpha.md) y las [notas históricas v0.6.1-alpha](docs/release-notes/v0.6.1-alpha.md). La licencia está pendiente de decisión del propietario; la publicación en GitHub no concede por sí misma una licencia de uso.
 
 ### Release Candidate Checklist
 
-- [x] `VERSION`, `package.json` y `package-lock.json` sincronizados en `0.6.1-alpha`.
-- [x] `npm run build`, `npm run lint` y `npm test` pasan localmente.
-- [x] Notas de versión y changelog preparados para `v0.6.1-alpha`.
+- [x] `VERSION`, `package.json` y `package-lock.json` sincronizados en `0.7.0-alpha`.
+- [x] Notas de versión y changelog preparados para `v0.7.0-alpha`.
+- [ ] Ejecutar build, lint y tests sobre la revisión candidata final.
 - [ ] Confirmar rama y publicar/taggear el release candidate en GitHub.
 - [ ] Validar Compose e imágenes en Linux con Docker Compose.
 - [ ] Ejecutar en VPS-WEB la [Deployment Validation Checklist](docs/deployment-coolify.md#deployment-validation-checklist).
 
 ### Deployment Validation Checklist
 
+Las siguientes verificaciones corresponden a la revisión candidata, no a las validaciones previamente comunicadas:
+
 - [ ] Coolify despliega el Compose con Base Directory `/deploy`, contexto de build en la raíz y los tres servicios quedan saludables.
 - [ ] HTTPS funciona en el servicio web; API y socket proxy no tienen puertos ni dominios públicos.
 - [ ] `/api/health` y `/api/diagnostics` responden correctamente desde el dominio autorizado.
 - [ ] `/api/docker/containers` y `/api/docker/stats` responden HTTP 200 con datos del Docker Engine esperado.
 - [ ] System Diagnostics muestra fuente `LIVE`, versión Docker, conteo de contenedores y última detección.
+- [ ] Coolify LIVE muestra los recursos esperados para el equipo autorizado.
+- [ ] Proxmox conserva DNS, CA y TLS estrictos; autentica el token, tiene permisos de lectura y devuelve el inventario esperado en health/discovery.
 - [ ] Revisados logs, autenticación del dominio, permisos del proxy y reinicio/recuperación en VPS-WEB.
 
 Las casillas marcadas corresponden a comprobaciones locales de release; las casillas sin marcar siguen pendientes en GitHub, Linux o VPS-WEB según corresponda. No declarar `DEPLOYMENT READY` hasta completar los checks del VPS.
@@ -453,7 +490,7 @@ Las [plantillas de issues y pull requests](.github/) y la [guía de etiquetas](d
 
 ## Version History
 
-Las siguientes etapas describen la evolución funcional del proyecto; no son versiones publicadas ni etiquetas Git verificadas.
+Las etapas V1–V5 describen la evolución funcional, no etiquetas Git. Las entradas versionadas describen su alcance; la presencia de una entrada aquí no confirma su publicación ni su despliegue.
 
 | Etapa | Cambios principales |
 |---|---|
@@ -462,3 +499,5 @@ Las siguientes etapas describen la evolución funcional del proyecto; no son ver
 | V3 | Digital Twin jerárquico, dependencias, filtros, colapso y descubrimiento. |
 | V4 | Identidad NEXUS PRIME y adaptador Docker con fallback simulado. |
 | V5 | Operational Health Engine, propagación de impacto, RCA, criticidad, Timeline y Operational Score. |
+| v0.6.1-alpha | Diagnóstico de sistema, API Docker LIVE, healthchecks y preparación de despliegue. |
+| v0.7.0-alpha, en preparación | Workspace Engine, fuentes Docker/Coolify/Proxmox, clasificación y limpieza de topología; validación Proxmox pendiente. |

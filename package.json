@@ -1,7 +1,7 @@
 {
   "name": "centro-operaciones",
   "private": true,
-  "version": "0.6.1-alpha",
+  "version": "0.7.0-alpha",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",

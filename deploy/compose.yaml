@@ -8,6 +8,7 @@ services:
       args:
         VITE_DOCKER_API_URL: ${VITE_DOCKER_API_URL:-/api/docker/containers}
         VITE_DOCKER_STATS_URL: ${VITE_DOCKER_STATS_URL:-/api/docker/stats}
+        VITE_NEXUS_ENVIRONMENT: ${VITE_NEXUS_ENVIRONMENT:-}
     expose:
       - "80"
     depends_on:

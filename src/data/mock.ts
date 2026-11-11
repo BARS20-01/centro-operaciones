@@ -43,6 +43,8 @@ const seedNodes: NodeInput[] = [
       labscreen: 'Punto de acceso a visualizaciones y servicios de laboratorio.',
     }[n.id] ?? 'Laboratorio académico monitorizado por NEXUS PRIME.',
   source: 'simulated' as const,
+  sourceSystem: n.id === 'docker' ? 'docker' as const : n.id === 'coolify' ? 'coolify' as const :
+    n.id === 'proxmox' || n.id === 'vps-web' ? 'proxmox' as const : undefined,
 }))
 
 const seedDependencies = [
@@ -88,7 +90,7 @@ export function servicesKpi(graph: TwinGraph, previous?: Kpi): Kpi {
 
 export function createInitialSnapshot(): Snapshot {
   const extra = Array.from({ length: stressCount() }, (_, i) =>
-    node(`sim-${i}`, `NODE-${i + 1}`, 'generic', 'labs', 'labscreen', 'low'),
+    ({ ...node(`sim-${i}`, `NODE-${i + 1}`, 'generic', 'labs', 'labscreen', 'low'), source: 'simulated' as const }),
   )
   const { graph } = mergeDiscovery(emptyGraph, { nodes: [...seedNodes, ...extra], dependencies: seedDependencies })
 
@@ -147,15 +149,16 @@ const SEVEN_DAYS = 7 * 24 * 3_600_000
  * the present so every timeline range has something to show.
  */
 export function seedHistory(graph: TwinGraph, now: number, count = 480): OpsEvent[] {
-  const nodes = Object.values(graph.nodes)
+  const nodes = Object.values(graph.nodes).filter((node) => !node.sourceSystem)
   const events = Array.from({ length: count }, (_, i): OpsEvent => {
     const timestamp = now - SEVEN_DAYS * Math.pow(Math.random(), 2.5) - 15_000
-    if (Math.random() < 0.14) {
+    if (!nodes.length || Math.random() < 0.14) {
       const t = pickOf(securityTemplates)
       return {
         id: `hist-${i}`,
         timestamp,
         source: pickOf(securitySources),
+        sourceMode: 'simulated',
         severity: t.severity,
         category: 'security',
         message: fillTemplate(t.message),
@@ -167,6 +170,8 @@ export function seedHistory(graph: TwinGraph, now: number, count = 480): OpsEven
       id: `hist-${i}`,
       timestamp,
       source: n.name,
+      sourceMode: 'simulated',
+      sourceSystem: n.sourceSystem,
       severity: t.severity,
       category: categoryOfLayer(n.layer),
       message: fillTemplate(t.message),

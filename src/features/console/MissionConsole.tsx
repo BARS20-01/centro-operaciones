@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
-import { ChevronDown, Terminal } from 'lucide-react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { ChevronDown, Clock3, Terminal } from 'lucide-react'
 import { Timeline } from '@/features/timeline/Timeline'
+import { SourceBadges } from '@/features/diagnostics/SourceBadges'
 import { severityColor } from '@/lib/status'
 import type { EventSeverity, OpsEvent } from '@/types'
 
@@ -16,6 +17,7 @@ export function MissionConsole({ events, operationsMode = false }: { events: Ops
   const [open, setOpen] = useState(true)
   const [view, setView] = useState<View>('console')
   const [hidden, setHidden] = useState<Set<EventSeverity>>(new Set())
+  const reducedMotion = useReducedMotion()
   const activeView: View = operationsMode ? 'console' : view
   const views: View[] = operationsMode ? ['console'] : ['console', 'timeline']
 
@@ -42,20 +44,23 @@ export function MissionConsole({ events, operationsMode = false }: { events: Ops
     })
 
   return (
-    <section className="hud-panel flex min-h-0 flex-col overflow-hidden rounded-lg font-mono" aria-label="Mission console">
+    <section className="hud-panel flex min-h-0 flex-col overflow-hidden rounded-lg" aria-label="Mission console">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-neon/20 px-3 py-1.5 text-[11px] uppercase tracking-widest text-slate-400">
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 text-slate-200 hover:text-neon"
+          className="flex items-center gap-2 font-mono text-slate-200 hover:text-neon"
           aria-expanded={open}
+          aria-controls="mission-console-content"
         >
           <Terminal className="size-4 text-neon" />
           Mission Console
           <ChevronDown className={`size-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
+          <span className="text-[10px] text-slate-400">{open ? 'Contraer' : 'Expandir'}</span>
         </button>
         <span className="flex items-center gap-1 text-ok">
-          <span className="size-1.5 animate-pulse rounded-full bg-ok" /> LIVE
+          <span className="size-1.5 animate-pulse rounded-full bg-ok" /> STREAM
         </span>
+        <SourceBadges />
         <div className="flex gap-1" role="tablist" aria-label="Vista">
           {views.map((v) => (
             <button
@@ -68,7 +73,7 @@ export function MissionConsole({ events, operationsMode = false }: { events: Ops
               }}
               className={`rounded border px-2 py-0.5 text-[10px] ${activeView === v ? 'border-neon/60 bg-neon/10 text-neon' : 'border-neon/15 text-slate-400 hover:text-slate-200'}`}
             >
-              {v === 'console' ? 'Console' : 'Timeline'}
+              {v === 'console' ? <span className="flex items-center gap-1"><Terminal className="size-3" /> Console</span> : <span className="flex items-center gap-1"><Clock3 className="size-3" /> Timeline</span>}
             </button>
           ))}
         </div>
@@ -92,10 +97,12 @@ export function MissionConsole({ events, operationsMode = false }: { events: Ops
       </header>
 
       <motion.div
+        id="mission-console-content"
+        inert={!open}
         initial={false}
-        animate={{ height: open ? (activeView === 'timeline' ? 210 : 124) : 0 }}
-        transition={{ duration: 0.3 }}
-        className="flex flex-col overflow-hidden bg-black/40"
+        animate={{ height: open ? (activeView === 'timeline' ? 390 : 230) : 0 }}
+        transition={{ duration: reducedMotion ? 0 : 0.3 }}
+        className={`flex flex-col overflow-hidden ${activeView === 'console' ? 'bg-black/60 font-mono' : 'bg-slate-950/60'}`}
       >
         {activeView === 'timeline' ? (
           <Timeline events={visible} />
@@ -109,6 +116,7 @@ export function MissionConsole({ events, operationsMode = false }: { events: Ops
                     {e.severity === 'success' ? 'OK' : e.severity.toUpperCase()}
                   </span>
                   <span className="hidden w-28 shrink-0 truncate text-neon/80 sm:inline">{e.source}</span>
+                  <span className="shrink-0 text-[9px] text-slate-400" aria-label={`Source: ${e.sourceMode.toUpperCase()}`}>{e.sourceMode.toUpperCase()}</span>
                   <span className="truncate text-slate-300">{e.message}</span>
                 </li>
               ))}

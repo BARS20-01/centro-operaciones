@@ -111,6 +111,8 @@ export interface OpsEvent {
   id: string
   timestamp: number
   source: string
+  sourceMode: 'live' | 'simulated' | 'unknown'
+  sourceSystem?: 'docker' | 'coolify' | 'proxmox'
   severity: EventSeverity
   category: EventCategory
   message: string

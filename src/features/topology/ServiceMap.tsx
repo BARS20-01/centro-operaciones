@@ -4,7 +4,8 @@ import { relatedSet } from '@/domain/analysis'
 import { CORE_ID } from '@/domain/graph'
 import { criticalityOf, HEALTH_LEVELS, type HealthReport } from '@/domain/health'
 import type { ViewModeId } from '@/features/dashboard/viewModes'
-import type { DataSource } from '@/integrations/types'
+import { useOperationalStatus } from '@/features/diagnostics/operationalStatusContext'
+import { nodeSourceStatus } from '@/features/diagnostics/sourceManager'
 import { LAYERS, healthColor } from '@/lib/status'
 import type { Health, Layer, Status, TwinGraph, TwinNode } from '@/types'
 import { TwinActions } from './actions'
@@ -25,6 +26,7 @@ import { ServiceNode, type ServiceData, type ServiceFlags, type ServiceNodeType 
 import { Legend, Toolbar } from './Toolbar'
 import { useTwinView } from './useTwinView'
 import { buildView } from './view'
+import { matchesSource } from '@/domain/sourceClassification'
 
 const nodeTypes = { core: CoreNode, service: ServiceNode, cluster: ClusterNode }
 const edgeTypes = { flow: FlowEdge }
@@ -47,26 +49,23 @@ function serviceData(node: TwinNode, flags: ServiceFlags): ServiceData {
 const CORE_STATUS: Record<string, Status> = { optimal: 'ok', healthy: 'ok', degraded: 'warn', 'at-risk': 'warn', critical: 'critical' }
 const isDown = (h: Health | undefined) => h === 'critical' || h === 'offline'
 
-type DockerSourceStatus = DataSource | 'checking' | 'unavailable'
-
 function Canvas({
   graph,
   report,
-  dockerSource,
   mode,
 }: {
   graph: TwinGraph
   report: HealthReport
-  dockerSource: DockerSourceStatus
   mode: ViewModeId
 }) {
   const ui = useTwinView(graph)
+  const { readings } = useOperationalStatus()
   const { fitView } = useReactFlow()
   const model = report.model
 
   const related = useMemo(() => (ui.selectedId ? relatedSet(graph, ui.selectedId) : null), [graph, ui.selectedId])
   // Topology keeps its identity across status/metric ticks, so layout only reruns on structural change.
-  const view = useMemo(() => buildView(graph.topology, ui.collapsed, ui.layers), [graph.topology, ui.collapsed, ui.layers])
+  const view = useMemo(() => buildView(graph.topology, ui.collapsed, ui.layers, (id) => matchesSource(graph.nodes[id], ui.sourceFilter)), [graph, ui.collapsed, ui.layers, ui.sourceFilter])
   const operationHealth = mode === 'operations' ? model.health : EMPTY_HEALTH
   const layout = useMemo(() => {
     if (mode === 'obsidian') return computeKnowledgeLayout(view, graph.topology, sizeOf)
@@ -128,7 +127,7 @@ function Canvas({
           position: { x: box.x, y: box.y },
           initialWidth: CORE_SIZE,
           initialHeight: CORE_SIZE,
-          data: { id, label: node.name, status: CORE_STATUS[level], levelLabel: HEALTH_LEVELS[level].label, orientation, ...flags },
+          data: { id, label: node.name, sourceClass: nodeSourceStatus(node, readings), status: CORE_STATUS[level], levelLabel: HEALTH_LEVELS[level].label, orientation, ...flags },
           draggable: false,
           zIndex: 1,
         } satisfies CoreNodeType)
@@ -217,7 +216,7 @@ function Canvas({
       })
     }
     return { nodes, edges }
-  }, [graph, model, report.nexus.level, view, layout, related, ui.selectedId, mode, orientation])
+  }, [graph, model, report.nexus.level, view, layout, related, ui.selectedId, mode, orientation, readings])
 
   // Until the user takes over the camera, keep the whole map framed as nodes are discovered.
   const nodeCount = nodes.length
@@ -244,7 +243,8 @@ function Canvas({
             onToggleLayer={ui.toggleLayer}
             onExpandAll={ui.expandAll}
             onCollapseAll={ui.collapseAll}
-            dockerSource={dockerSource}
+            sourceFilter={ui.sourceFilter}
+            onSourceFilter={ui.filterSource}
           />
         </div>
         <div className="relative min-h-0 flex-1">
@@ -274,7 +274,6 @@ function Canvas({
                 graph={graph}
                 id={ui.selectedId}
                 model={model}
-                source={dockerSource}
                 onSelect={ui.select}
                 onClose={() => ui.select(null)}
               />
@@ -291,17 +290,15 @@ const EMPTY_HEALTH: ReadonlyMap<string, Health> = new Map()
 export function ServiceMap({
   graph,
   report,
-  dockerSource,
   mode,
 }: {
   graph: TwinGraph
   report: HealthReport
-  dockerSource: DockerSourceStatus
   mode: ViewModeId
 }) {
   return (
     <ReactFlowProvider>
-      <Canvas graph={graph} report={report} dockerSource={dockerSource} mode={mode} />
+      <Canvas graph={graph} report={report} mode={mode} />
     </ReactFlowProvider>
   )
 }

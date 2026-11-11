@@ -3,7 +3,9 @@ import { X } from 'lucide-react'
 import { affectedBy, depIndex, hostPath } from '@/domain/analysis'
 import { criticalityOf, relationBetween, rootCauses, type HealthModel } from '@/domain/health'
 import { formatBytes, formatUptime } from '@/integrations/docker.integration'
-import type { DataSource } from '@/integrations/types'
+import { nodeSourceStatus } from '@/features/diagnostics/sourceManager'
+import { SOURCE_COLORS } from '@/features/diagnostics/operationalStatus'
+import { useOperationalStatus } from '@/features/diagnostics/operationalStatusContext'
 import { criticalityMeta, healthColor, healthLabel, layerMeta } from '@/lib/status'
 import type { TwinGraph } from '@/types'
 
@@ -11,7 +13,6 @@ interface Props {
   graph: TwinGraph
   id: string
   model: HealthModel
-  source: DataSource | 'checking' | 'unavailable'
   onSelect: (id: string) => void
   onClose: () => void
 }
@@ -25,8 +26,9 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-export function Inspector({ graph, id, model, source, onSelect, onClose }: Props) {
+export function Inspector({ graph, id, model, onSelect, onClose }: Props) {
   const node = graph.nodes[id]
+  const { readings } = useOperationalStatus()
   const idx = useMemo(() => depIndex(graph), [graph])
   const causes = useMemo(() => (graph.nodes[id] ? rootCauses(graph, id) : []), [graph, id])
   const blast = useMemo(() => {
@@ -43,7 +45,7 @@ export function Inspector({ graph, id, model, source, onSelect, onClose }: Props
   const crit = criticalityMeta[criticalityOf(node)]
   const failing = node.status === 'critical' || node.status === 'offline'
   const name = (n: string) => graph.nodes[n]?.name ?? n
-  const dataSource = node.source ?? (node.origin === 'discovered' && source === 'live' ? 'live' : 'simulated')
+  const dataSource = nodeSourceStatus(node, readings)
   const entitiesAffected = blast
 
   const chips = (ids: string[]) =>
@@ -230,9 +232,10 @@ export function Inspector({ graph, id, model, source, onSelect, onClose }: Props
         </span>
       </Row>
       <Row label="Fuente">
-        <span className="font-semibold" style={{ color: dataSource === 'live' ? 'var(--theme-success)' : 'var(--theme-warning)' }}>
-          {node.sourceSystem ? `${node.sourceSystem.toUpperCase()} ` : ''}{dataSource === 'live' ? 'LIVE' : 'SIMULATED'}{node.stale ? ' · SINCRONIZACIÓN FALLIDA' : ''}
+        <span className="font-semibold" style={{ color: SOURCE_COLORS[dataSource] }}>
+          {node.sourceSystem ? `${node.sourceSystem.toUpperCase()} ` : ''}{dataSource}
         </span>
+        {node.sourceSystem && <div className="text-slate-400">Procedencia del recurso: {node.source?.toUpperCase() ?? 'UNKNOWN'}{node.stale ? ' · DESACTUALIZADO' : ''}</div>}
       </Row>
       <Row label={`Aloja (${hosted.length})`}>{chips(hosted)}</Row>
     </aside>

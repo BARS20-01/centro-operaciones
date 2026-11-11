@@ -78,23 +78,35 @@ function statusOf(resource: Resource): Status {
 export function proxmoxNodes(snapshot: ProxmoxSnapshot): NodeInput[] {
   if (snapshot.source !== 'live') return []
   const shared = { origin: 'discovered' as const, source: 'live' as const, sourceSystem: 'proxmox' as const }
-  const nodes: NodeInput[] = [{
-    ...shared, id: 'proxmox', name: 'Proxmox', kind: 'proxmox', layer: 'infrastructure',
-    parentId: null, status: 'ok', category: 'Proxmox VE',
-  }]
-  const hosts = new Set(snapshot.resources.filter((r) => r.type === 'node').map((r) => r.node))
+  const resources = new Map<string, Resource>()
   for (const item of snapshot.resources) {
+    if ((item.type === 'qemu' || item.type === 'lxc') && (!Number.isSafeInteger(item.vmid) || !item.vmid || item.vmid < 0)) {
+      throw new Error(`Invalid Proxmox VM identity: ${item.id}`)
+    }
+    const expectedId = item.type === 'node' ? `node/${item.node}` :
+      item.type === 'storage' ? `storage/${item.node}/${item.name}` : `${item.type}/${item.vmid}`
+    if (item.id !== expectedId) throw new Error(`Invalid Proxmox resource identity: ${item.id}`)
+    const existing = resources.get(expectedId)
+    if (existing) {
+      const fields: (keyof Resource)[] = ['type', 'name', 'node', 'vmid', 'status', 'cpu', 'memory', 'maxMemory', 'disk', 'maxDisk', 'uptime']
+      if (fields.some((field) => existing[field] !== item[field])) throw new Error(`Conflicting Proxmox resource identity: ${expectedId}`)
+    } else resources.set(expectedId, item)
+  }
+  const nodes: NodeInput[] = []
+  const hosts = new Set([...resources.values()].filter((r) => r.type === 'node').map((r) => r.node))
+  const hostId = (name: string) => name === 'proxmox' ? 'proxmox' : `proxmox-node/${name}`
+  for (const item of [...resources.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
     if (item.type !== 'node' && !hosts.has(item.node)) continue
     if (item.type === 'qemu' && item.vmid === 100 && item.status === 'stopped') continue
     const isCore = item.type === 'qemu' && item.vmid === 200 && item.node === 'proxmox'
-    const id = isCore ? 'vps-web' : `proxmox-${item.id}`
+    const id = item.type === 'node' ? hostId(item.node) : isCore ? 'vps-web' : `proxmox-${item.id}`
     const metrics = item.cpu !== null && item.memory !== null && item.maxMemory && item.uptime !== null
       ? { cpuPercent: Math.round(item.cpu * 1000) / 10, memPercent: Math.round(item.memory / item.maxMemory * 1000) / 10,
         memBytes: item.memory, uptimeSec: item.uptime }
       : undefined
     nodes.push({
-      ...shared, id, name: isCore ? 'NEXUS CORE' : item.name, kind: isCore ? 'vps' : 'generic',
-      layer: 'infrastructure', parentId: item.type === 'node' ? 'proxmox' : `proxmox-node/${item.node}`,
+      ...shared, id, name: isCore ? 'NEXUS CORE' : item.name, kind: isCore ? 'vps' : item.type === 'node' ? 'proxmox' : 'generic',
+      layer: 'infrastructure', parentId: item.type === 'node' ? null : hostId(item.node),
       status: statusOf(item), category: item.type === 'node' ? 'Proxmox node' : item.type === 'storage' ? 'Proxmox storage' : `Proxmox ${item.type.toUpperCase()} ${item.vmid}`,
       currentStatus: item.status ?? undefined, metrics,
       diskPercent: item.disk !== null && item.maxDisk ? Math.round(item.disk / item.maxDisk * 1000) / 10 : undefined,
@@ -106,18 +118,24 @@ export function proxmoxNodes(snapshot: ProxmoxSnapshot): NodeInput[] {
 
 export function createProxmoxIntegration(): Integration {
   let known = new Set<string>()
+  let source: 'live' | 'simulated' | undefined
   return {
     id: 'proxmox', name: 'Proxmox VE', description: 'Hipervisor y VMs', feeds: 'infrastructure',
+    get source() { return source },
     async ping() {
       try { await fetchProxmoxSnapshot(); return true } catch { return false }
     },
     async discover(): Promise<DiscoveryResult> {
       const snapshot = await fetchProxmoxSnapshot()
-      if (snapshot.source === 'simulated') return { nodes: [] }
+      if (snapshot.source === 'simulated') {
+        source = snapshot.source
+        return { nodes: [] }
+      }
       const nodes = proxmoxNodes(snapshot)
       const ids = new Set(nodes.map((node) => node.id))
       const removed = [...known].filter((id) => !ids.has(id) && id !== 'vps-web' && !id.startsWith('proxmox-node/'))
       known = ids
+      source = snapshot.source
       return { nodes, removed }
     },
   }

@@ -7,6 +7,8 @@ import type { Criticality, Health, TwinNode } from '@/types'
 import { TwinActions } from './actions'
 import { kindIcons } from './icons'
 import { NODE_SIZE, type NodeOrientation } from './layout'
+import { nodeSourceStatus } from '@/features/diagnostics/sourceManager'
+import { useOperationalStatus } from '@/features/diagnostics/operationalStatusContext'
 
 export interface ServiceFlags {
   /** Effective health: the reported status, or `impacted` when propagated from upstream. */
@@ -46,6 +48,7 @@ function CriticalityPips({ level }: { level: Criticality }) {
 function ServiceNodeComponent({ data }: NodeProps<ServiceNodeType>) {
   const { node, health, criticality, orientation, cause, dim, selected, expandable, collapsed, hiddenCount } = data
   const { toggle } = useContext(TwinActions)
+  const { readings } = useOperationalStatus()
   const Icon = kindIcons[node.kind]
   const color = healthColor[health]
   const accent = layerMeta[node.layer].color
@@ -74,18 +77,10 @@ function ServiceNodeComponent({ data }: NodeProps<ServiceNodeType>) {
       <Icon className="size-4 shrink-0" style={{ color }} />
       <span className="min-w-0 flex-1 leading-tight">
         <span className="block truncate text-xs font-semibold tracking-wide text-slate-100">{node.name}</span>
-        {(impacted || node.origin === 'discovered') && (
-          <span className="flex items-center gap-1 truncate text-[9px] uppercase tracking-wider" style={{ color: impacted ? color : undefined }}>
-            {impacted ? (
-              <>
-                <TriangleAlert className="size-2.5 shrink-0" />
-                <span className="truncate">impactado{cause ? ` · ${cause}` : ''}</span>
-              </>
-            ) : (
-              <span className="text-neon/70">auto</span>
-            )}
-          </span>
-        )}
+        <span className="flex items-center gap-1 text-[9px] font-semibold tracking-wider text-neon/80">
+          <span>{nodeSourceStatus(node, readings)}</span>
+          {impacted && <><TriangleAlert className="size-2.5 shrink-0" style={{ color }} /><span className="truncate" style={{ color }}>impactado{cause ? ` · ${cause}` : ''}</span></>}
+        </span>
       </span>
       {expandable && (
         <button

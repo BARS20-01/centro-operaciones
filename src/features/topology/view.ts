@@ -1,4 +1,4 @@
-import { CORE_ID } from '@/domain/graph'
+import { CORE_ID } from '../../domain/graph'
 import type { Layer, Topology, TwinGraph } from '@/types'
 
 /** The visible tree after applying layer filters and branch collapsing. */
@@ -15,11 +15,11 @@ export interface TwinView {
 /**
  * Filtered-out nodes are contracted: their visible descendants reattach to
  * the nearest visible ancestor, so relationships stay readable. The core is
- * pinned and never filtered.
+ * pinned against layer filters, but follows the source filter.
  */
-export function buildView(topology: Topology, collapsed: ReadonlySet<string>, layers: ReadonlySet<Layer>): TwinView {
+export function buildView(topology: Topology, collapsed: ReadonlySet<string>, layers: ReadonlySet<Layer>, matches: (id: string) => boolean = () => true): TwinView {
   const view: TwinView = { roots: [], kids: new Map(), parent: new Map(), hidden: new Map(), order: [] }
-  const isShown = (id: string) => id === CORE_ID || layers.has(topology.layers[id])
+  const isShown = (id: string) => matches(id) && (id === CORE_ID || layers.has(topology.layers[id]))
 
   const countShown = (id: string): number => {
     let n = 0

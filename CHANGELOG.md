@@ -6,6 +6,24 @@ Los cambios relevantes del proyecto se documentan aquí conforme a [Keep a Chang
 
 Sin cambios registrados.
 
+## [0.7.0-alpha] - En preparación
+
+### Added
+
+- Workspace Engine con Operations Center, Security Command, Digital Twin, AI Operations, Executive Overview y Homelab Mission Control; las nuevas experiencias emplean datos simulados.
+- Integraciones de descubrimiento Coolify y Proxmox y clasificación de fuentes LIVE, SIMULATED, OFFLINE y UNKNOWN.
+- Filtros de procedencia, diagnósticos de fuentes y deduplicación de identidades explícitas en el grafo operacional.
+
+### Changed
+
+- Documentación, arquitectura, roadmap y metadatos de versión alineados con el estado operativo comunicado.
+- Docker LIVE y Coolify LIVE constan como validados en VPS-WEB según reporte; Proxmox LIVE permanece en validación. DNS y TLS Proxmox fueron validados, sin confirmación aún de autenticación ni inventario.
+
+### Limitations
+
+- Esta entrada describe la revisión de trabajo: su publicación, despliegue y aceptación aún no están confirmados.
+- La API requiere protección externa; las vistas alternativas y parte de Operations Center utilizan datos simulados.
+
 ## [0.6.1-alpha] - 2026-11-09
 
 ### Added

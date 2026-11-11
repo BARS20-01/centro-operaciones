@@ -1,10 +1,10 @@
 # Guía de despliegue de NEXUS PRIME en Coolify
 
-- **Referencia de versión:** v0.6.1-alpha
+- **Referencia de versión de trabajo:** v0.7.0-alpha
 - **Recurso recomendado:** una aplicación Docker Compose
 - **Archivo:** [`deploy/compose.yaml`](../deploy/compose.yaml)
 
-> **Estado de certificación:** la configuración del repositorio pasa las comprobaciones locales de build, lint y tests, pero el checkout no tiene Docker CLI/daemon ni acceso al VPS-WEB o Coolify. Por lo tanto, no se puede certificar aún el despliegue LIVE ni declarar el entorno de producción `DEPLOYMENT READY`.
+> **Estado operativo comunicado:** Docker LIVE y Coolify LIVE fueron validados en VPS-WEB. Para Proxmox se validaron DNS y TLS; la autenticación y el inventario siguen en curso. Estos resultados no certifican automáticamente la revisión v0.7.0-alpha, cuyos cambios locales aún deben publicarse y validarse. No se dispone aquí de una nueva comprobación directa del VPS.
 
 ## Arquitectura
 
@@ -31,6 +31,8 @@ Docker Engine del host
 ```
 
 La red `web-api` permite que Nginx alcance la API. La API también pertenece a `api-docker`, marcada `internal: true`, pero el frontend y el proxy Docker no comparten una red. El socket no se monta en la API ni en el frontend.
+
+Además, la API consulta las API externas de Coolify y Proxmox mediante su conectividad de salida. Proxmox requiere el hostname configurado, la CA montada y TLS estricto; no pasa por Docker Socket Proxy.
 
 ## Diagnóstico del error de rutas
 
@@ -63,9 +65,9 @@ raíz-del-checkout/
 | B. Docker Compose Empty / embebido | Pegar el YAML no aporta `frontend/`, `backend/`, `src/` ni los manifiestos. Las rutas relativas apuntan al directorio del recurso en el servidor, no al checkout Git. | El YAML actual **no es autónomo** en este modo. Para usarlo, construye y publica previamente las imágenes web/API en un registry y reemplaza `build` por referencias `image` fijadas por digest en el Compose embebido; configura las credenciales de lectura necesarias. Esto requiere un flujo de publicación de imágenes aparte. |
 | C. Aplicaciones separadas | Cada aplicación debe obtener el checkout completo y construir desde su raíz con su respectivo Dockerfile. | No es equivalente a este Compose: deben establecerse redes compartidas y DNS/alias estables para `nexus-prime-api` y `nexus-prime-docker-proxy`, incluida la red interna del proxy, sin exponer API ni proxy. No es la opción recomendada sin diseñar y validar esa configuración. |
 
-El YAML corregido para la opción A es el [Compose completo del repositorio](../deploy/compose.yaml), con comentarios que indican los valores de Coolify. No se han modificado los servicios, las redes ni la funcionalidad; el cambio imprescindible para el error es seleccionar el **tipo de recurso y Base Directory correctos**, no reescribir `context: ..`.
+El YAML para la opción A es el [Compose completo del repositorio](../deploy/compose.yaml), con comentarios que indican los valores de Coolify. Para resolver este error de rutas, selecciona el **tipo de recurso y Base Directory correctos**, sin reescribir `context: ..`.
 
-> **Git y cambios locales:** Coolify solo puede desplegar archivos presentes en la revisión remota seleccionada. En la copia local analizada, el tag `v0.6.1-alpha` apunta a `c6fba36` y contiene una versión anterior del Compose: exige `DOCKER_SOCKET_PROXY_IMAGE` y no incluye los healthchecks/diagnóstico actuales. Las modificaciones locales todavía no están comprometidas. Antes de desplegar esta configuración, inclúyelas en una revisión aprobada, publícala en Git y selecciónala en Coolify; no asumas que el tag existente contiene el árbol de trabajo. No se ha modificado el tag.
+> **Git y cambios locales:** Coolify solo puede desplegar archivos presentes en la revisión remota seleccionada. El tag histórico `v0.6.1-alpha` contiene una versión anterior del Compose y no representa el árbol de trabajo actual. Antes de desplegar esta configuración, incluye los cambios locales en una revisión aprobada, publícala en Git y selecciónala en Coolify; no asumas que un tag anterior contiene esos cambios.
 
 ## 1. Crear el recurso y el servicio frontend
 
@@ -127,8 +129,9 @@ Define las variables interpoladas por el Compose en la configuración de variabl
 |---|---|---|
 | `DOCKER_SOCKET_PROXY_IMAGE` | Proxy, runtime | Opcional. Por defecto, `ghcr.io/tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459` (release `v0.5.0`, digest consultado en GHCR el 2026-11-09). Si se sobrescribe, usar un digest SHA-256 aprobado, no `latest` ni una etiqueta mutable. |
 | `DOCKER_SOCKET_PATH` | Proxy, runtime | Opcional. Ruta del socket del daemon Docker en el host asignado al recurso. Si no se define, el Compose usa `/var/run/docker.sock`. |
-| `VITE_DOCKER_API_URL` | Web, build | Opcional. Por defecto `/api/docker/containers`. |
-| `VITE_DOCKER_STATS_URL` | Web, build | Opcional. Por defecto `/api/docker/stats`. |
+| `VITE_DOCKER_API_URL` | Web, build, legado | Solo se admite `/api/docker/containers`; no selecciona otro origen. |
+| `VITE_DOCKER_STATS_URL` | Web, build, legado | Solo se admite `/api/docker/stats`; no selecciona otro origen. |
+| `VITE_NEXUS_ENVIRONMENT` | Web, build | Define `PRODUCTION` para VPS-WEB de producción, o `STAGING`/`LOCAL` según corresponda. Si no está configurado, la compilación muestra `UNKNOWN`; no determina la procedencia LIVE. |
 | `COOLIFY_URL` | API, runtime | Opcional. Origen de la instancia Coolify, sin `/api/v1`, credenciales ni parámetros; HTTPS recomendado. Para el VPS indicado, `http://coolify:8080` requiere aceptación explícita de riesgo. |
 | `COOLIFY_API_KEY` | API, runtime | Opcional. Token de Coolify del equipo objetivo con permiso **read**; guardar como secreto en Coolify. No usar `VITE_`, `read:sensitive`, `write`, `deploy` ni `root`. |
 | `COOLIFY_ALLOW_INSECURE_HTTP` | API, runtime | `false` por defecto. Solo el valor exacto `true` permite HTTP y acepta que la clave y los datos viajen sin cifrar. |
@@ -140,6 +143,8 @@ Define las variables interpoladas por el Compose en la configuración de variabl
 | `PROXMOX_CA_PATH` | Compose, host | Ruta absoluta al PEM de CA confiable en el host Docker; por defecto `/etc/nexus-prime/certs/proxmox-ca.pem`. El archivo debe existir antes del despliegue. |
 
 Las variables `VITE_*` se consumen como argumentos de build; un cambio requiere reconstruir y desplegar el frontend. Se recomienda conservar las rutas relativas por defecto para usar el mismo origen HTTPS y el proxy Nginx existente.
+
+En Coolify configura `VITE_NEXUS_ENVIRONMENT` como variable de build del recurso Compose y reconstruye/redeploya `nexus-prime-web`. La etiqueta es declarativa, no detecta automáticamente el destino ni confirma que una integración esté conectada. LOCAL y STAGING permiten el fallback Docker simulado; PRODUCTION y UNKNOWN no lo permiten. Si Proxmox responde en modo simulado en PRODUCTION o UNKNOWN, el Source Manager lo presenta como UNKNOWN.
 
 ### Proxmox LIVE
 
@@ -283,11 +288,13 @@ El ingress de Coolify envía solicitudes públicas al frontend en el puerto 80. 
 | API Dockerfile | Multi-stage, podado de dependencias de desarrollo y ejecuta como usuario no-root `nexus`; Docker CLI está en runtime. | `node:22-alpine` y el paquete `docker-cli` de Alpine no están fijados por versión/digest; fijarlos y escanear imágenes para builds reproducibles. |
 | `.dockerignore` | Excluye `node_modules`, artefactos, `.env`, llaves y secretos. | Revisar que ningún secreto se suministre como `ARG` o se copie desde una ruta fuera de este control. |
 | API de diagnóstico | `/api/health` verifica Express sin depender de Docker; `/api/diagnostics` comprueba la versión del Engine y la colección Docker. | Los endpoints no incluyen auth; deben permanecer detrás del dominio protegido. |
-| Pruebas Docker LIVE | Fixtures validan normalización y estado de error del backend; **System Diagnostics** contrasta API, proxy/ruta, Engine, descubrimiento y fallback simulado. | Fixtures no son una prueba contra Docker Engine real. En estado `SIMULATED`, el despliegue no es LIVE ni aceptable como tal. |
+| Pruebas Docker LIVE | Fixtures validan normalización y estado de error del backend; **System Diagnostics** y Operations comparten el Source Manager y su Data Source Consistency Check. | Fixtures no son una prueba contra Docker Engine real. En estado `SIMULATED` o `PARTIAL`, el despliegue no es LIVE ni aceptable como tal. |
 
 No se midió el tamaño de las imágenes ni se comprobó su arranque: requieren Docker. El uso de multi-stage reduce el runtime respecto al build stage, pero no se informa un tamaño estimado como si fuera medido.
 
 ## Deployment Validation Checklist
+
+La validación Docker y Coolify comunicada anteriormente corresponde al entorno ya probado. Las casillas siguientes se aplican a la revisión seleccionada para el nuevo despliegue y no se marcan sin evidencia específica.
 
 - [ ] Se seleccionó una revisión publicada que contiene todos los cambios; Coolify carga `deploy/compose.yaml` desde una aplicación Git con Base Directory `/deploy` y Compose Location `/compose.yaml`.
 - [ ] `DOCKER_SOCKET_PROXY_IMAGE` tiene un digest aprobado y `DOCKER_SOCKET_PATH` apunta al socket del host correcto, si se requiere una ruta distinta.
@@ -301,6 +308,9 @@ No se midió el tamaño de las imágenes ni se comprobó su arranque: requieren 
 - [ ] Los logs de la API no muestran errores de conexión o ejecución de Docker.
 - [ ] Se verificó externamente que la API y el proxy no son accesibles desde Internet.
 - [ ] Se definió control de acceso para el dashboard: la API no implementa autenticación propia y los endpoints exponen inventario/metadatos Docker.
+- [ ] Coolify LIVE devuelve los recursos esperados para el equipo autorizado.
+- [ ] Proxmox resuelve el hostname correcto y valida CA y SAN con TLS estricto; el token autentica y tiene permisos de lectura para el inventario esperado.
+- [ ] `/api/proxmox/health` y `/api/proxmox/discovery` responden con datos reales coherentes; no registrar ni revelar el token.
 
 ### Checklist de aceptación final
 
@@ -311,15 +321,16 @@ No se midió el tamaño de las imágenes ni se comprobó su arranque: requieren 
 - [ ] **Variables:** rutas Vite relativas; `DOCKER_SOCKET_PATH` apunta al daemon correcto; imagen proxy fijada por digest.
 - [ ] **Proxy:** `/_ping` y `VERSION` responden desde el servicio API; `POST=0`; endpoints de mutación denegados; ningún puerto/dominio público.
 - [ ] **API:** `/api/health` responde 200; API solo accesible a través del frontend/red interna.
-- [ ] **Docker LIVE:** `/api/docker/containers` y `/api/docker/stats` responden 200; versión y cantidad corresponden al Engine objetivo; Diagnostics muestra descubrimiento `OK` y fuente `LIVE`.
+- [ ] **Docker LIVE:** `/api/docker/containers` y `/api/docker/stats` responden 200; versión y cantidad corresponden al Engine objetivo; Diagnostics muestra Discovery Engine y fuente `LIVE`, sin discrepancias en Data Source Consistency Check.
 - [ ] **Coolify:** aplicación Compose desde Git, Base Directory `/deploy`, Compose Location `/compose.yaml`, build desde raíz del checkout, dominio TLS solo en frontend e ingress/autenticación probados.
+- [ ] **Proxmox LIVE:** autenticación, permisos, health e inventario real validados; DNS y TLS estrictos preservados.
 - [ ] **VPS-WEB:** prueba operativa posterior a reinicio y confirmación de recuperación de proxy/API/dashboard.
 
-Si un endpoint responde `503`, revisa los logs de la API, la resolución de `nexus-prime-docker-proxy`, el acceso del proxy al socket y su allowlist. No lo resuelvas exponiendo directamente el puerto 2375 o el socket. El dashboard puede mostrar datos simulados si falla la API; confirma los HTTP 200 y el indicador `Docker: LIVE` antes de dar el despliegue por validado.
+Si un endpoint responde `503`, revisa los logs de la API, la resolución de `nexus-prime-docker-proxy`, el acceso del proxy al socket y su allowlist. No lo resuelvas exponiendo directamente el puerto 2375 o el socket. En LOCAL y STAGING puede mostrarse el fallback Docker simulado; en PRODUCTION y UNKNOWN está deshabilitado. Confirma los HTTP 200, el indicador `Docker: LIVE` y el Data Source Consistency Check antes de dar el despliegue por validado. Los datos simulados de entidades ajenas a Docker se mantienen identificados.
 
 ## Decisión de certificación
 
-**Resultado del repositorio:** listo para ejecutar la validación en Coolify después de desplegar la rama que contiene estos cambios; no se detecta una incompatibilidad Compose estructural conocida. **Resultado VPS-WEB/Coolify:** pendiente, no certificado. Faltan evidencia de parsing/build Docker, permisos reales del socket, estado de los healthchecks, dominio/ingress/autenticación y consultas Docker LIVE contra el daemon objetivo. No marcar `DEPLOYMENT READY` hasta completar todas las casillas de aceptación final.
+**Resultado comunicado para VPS-WEB:** Docker LIVE y Coolify LIVE validados; DNS y TLS Proxmox validados, pero Proxmox LIVE sigue en validación. **Revisión v0.7.0-alpha:** pendiente de publicación y de aceptación específica; los cambios locales no están necesariamente desplegados. No marcar `DEPLOYMENT READY` para esta revisión hasta completar las casillas de aceptación final.
 
 ## Referencia de Coolify
 

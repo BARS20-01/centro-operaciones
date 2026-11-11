@@ -1,7 +1,7 @@
 import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import { LAYERS, layerMeta } from '@/lib/status'
-import type { DataSource } from '@/integrations/types'
 import type { Layer } from '@/types'
+import type { SourceFilter } from '@/domain/sourceClassification'
 
 interface Props {
   layers: ReadonlySet<Layer>
@@ -9,10 +9,11 @@ interface Props {
   onToggleLayer: (l: Layer) => void
   onExpandAll: () => void
   onCollapseAll: () => void
-  dockerSource: DataSource | 'checking' | 'unavailable'
+  sourceFilter: SourceFilter
+  onSourceFilter: (filter: SourceFilter) => void
 }
 
-export function Toolbar({ layers, counts, onToggleLayer, onExpandAll, onCollapseAll, dockerSource }: Props) {
+export function Toolbar({ layers, counts, onToggleLayer, onExpandAll, onCollapseAll, sourceFilter, onSourceFilter }: Props) {
   return (
     <div className="hud-panel flex flex-wrap items-center gap-1.5 rounded-lg p-1.5 text-[11px]">
       {LAYERS.map((l) => {
@@ -39,15 +40,20 @@ export function Toolbar({ layers, counts, onToggleLayer, onExpandAll, onCollapse
         )
       })}
       <span className="mx-1 hidden h-4 w-px bg-neon/20 sm:block" />
+      <label className="flex items-center gap-1 text-slate-400">Origen
+        <select aria-label="Filtrar por origen" value={sourceFilter} onChange={(event) => {
+          const value = event.target.value
+          if (value === 'all' || value === 'live' || value === 'simulated') onSourceFilter(value)
+        }} className="rounded border border-neon/25 bg-panel px-2 py-1 text-slate-200">
+          <option value="all">Todo</option><option value="live">Solo LIVE</option><option value="simulated">Solo SIMULATED</option>
+        </select>
+      </label>
       <button onClick={onExpandAll} className="flex items-center gap-1 rounded px-2 py-1 text-slate-300 hover:bg-neon/10">
         <ChevronsUpDown className="size-3.5" /> Expandir
       </button>
       <button onClick={onCollapseAll} className="flex items-center gap-1 rounded px-2 py-1 text-slate-300 hover:bg-neon/10">
         <ChevronsDownUp className="size-3.5" /> Colapsar ramas
       </button>
-      <span role="status" className="ml-auto px-2 text-[10px] uppercase tracking-wider text-slate-400">
-        Docker: <span className={dockerSource === 'live' ? 'text-ok' : 'text-amber'}>{dockerSource}</span>
-      </span>
     </div>
   )
 }

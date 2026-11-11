@@ -61,6 +61,8 @@ export interface DockerOptions {
   retryAfterMs?: number
   /** Twin node that hosts the containers. */
   hostId?: string
+  /** Disable simulated fallback when the operational environment requires live data. */
+  allowFallback?: boolean
 }
 
 const GB = 1024 ** 3
@@ -200,28 +202,32 @@ const toReading = (c: DockerContainer, now: number): ContainerReading => ({
 
 export interface DockerIntegration extends Integration {
   id: 'docker'
-  getContainers(): Promise<ContainerReading[]>
-  discover(): Promise<DiscoveryResult>
+  getContainers(signal?: AbortSignal): Promise<ContainerReading[]>
+  discover(signal?: AbortSignal): Promise<DiscoveryResult>
 }
 
 export function createDockerIntegration(options: DockerOptions = {}): DockerIntegration {
-  const containersUrl = import.meta.env.VITE_DOCKER_API_URL ?? '/api/docker/containers'
-  const statsUrl = import.meta.env.VITE_DOCKER_STATS_URL
+  const containersUrl = '/api/docker/containers'
+  const statsUrl = '/api/docker/stats'
   const {
     transport = httpTransport(containersUrl, statsUrl ?? statsEndpoint(containersUrl)),
     fallback = simulatedTransport(),
     timeoutMs = 40_000,
     retryAfterMs = 30_000,
     hostId = 'docker',
+    allowFallback = true,
   } = options
 
   let source: DataSource = 'simulated'
   let retryAt = 0
   let known = new Set<string>()
 
-  async function fetchRaw(): Promise<DockerContainer[]> {
+  async function fetchRaw(signal?: AbortSignal): Promise<DockerContainer[]> {
+    if (signal?.aborted) throw new DOMException('Docker discovery aborted', 'AbortError')
     if (Date.now() >= retryAt) {
       const ctrl = new AbortController()
+      const abort = () => ctrl.abort()
+      signal?.addEventListener('abort', abort, { once: true })
       const timer = setTimeout(() => ctrl.abort(), timeoutMs)
       try {
         const [live, stats] = await Promise.all([
@@ -239,15 +245,18 @@ export function createDockerIntegration(options: DockerOptions = {}): DockerInte
             : container
         })
       } catch (error) {
+        if (signal?.aborted) throw error
+        if (!allowFallback) throw error
         console.warn('Docker API unavailable; using simulated containers:', error)
         retryAt = Date.now() + retryAfterMs
       } finally {
         clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
       }
     }
     source = 'simulated'
-    const signal = new AbortController().signal
-    const [containers, stats] = await Promise.all([fallback.listContainers(signal), fallback.listStats?.(signal)])
+    const fallbackSignal = signal ?? new AbortController().signal
+    const [containers, stats] = await Promise.all([fallback.listContainers(fallbackSignal), fallback.listStats?.(fallbackSignal)])
     if (!stats) return containers
     const byId = new Map(stats.map((reading) => [reading.id, reading]))
     return containers.map((container) => {
@@ -258,9 +267,9 @@ export function createDockerIntegration(options: DockerOptions = {}): DockerInte
     })
   }
 
-  async function getContainers() {
+  async function getContainers(signal?: AbortSignal) {
     const now = Date.now()
-    return (await fetchRaw()).map((c) => toReading(c, now))
+    return (await fetchRaw(signal)).map((c) => toReading(c, now))
   }
 
   return {
@@ -288,8 +297,8 @@ export function createDockerIntegration(options: DockerOptions = {}): DockerInte
       }
     },
 
-    async discover(): Promise<DiscoveryResult> {
-      const readings = await getContainers()
+    async discover(signal?: AbortSignal): Promise<DiscoveryResult> {
+      const readings = await getContainers(signal)
       const nodes: NodeInput[] = readings.map((c) => ({
         id: `ctr-${c.name}`,
         name: c.name,

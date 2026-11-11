@@ -6,9 +6,10 @@ import { statusColor } from '@/lib/status'
 import type { Status } from '@/types'
 import { TwinActions } from './actions'
 import { CORE_SIZE, type NodeOrientation } from './layout'
+import type { OperationalStatus } from '@/features/diagnostics/operationalStatus'
 
 export type CoreNodeType = Node<
-  { id: string; label: string; status: Status; levelLabel: string; orientation: NodeOrientation; dim: boolean; expandable: boolean; collapsed: boolean; hiddenCount: number },
+  { id: string; label: string; sourceClass: OperationalStatus; status: Status; levelLabel: string; orientation: NodeOrientation; dim: boolean; expandable: boolean; collapsed: boolean; hiddenCount: number },
   'core'
 >
 
@@ -93,6 +94,7 @@ function CoreNodeComponent({ data }: NodeProps<CoreNodeType>) {
           {data.label}
         </span>
         <span className="text-[9px] tracking-[0.25em] text-slate-400">{data.id.toUpperCase()}</span>
+        <span className="text-[10px] font-semibold text-slate-200">{data.sourceClass}</span>
         <span className="text-[10px] font-bold tracking-[0.3em]">{label}</span>
         {data.expandable && (
           <button

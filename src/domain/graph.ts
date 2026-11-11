@@ -41,6 +41,8 @@ function buildIndex(nodes: Record<string, TwinNode>) {
     if (n.parentId === null) roots.push(n.id)
     else (children[n.parentId] ??= []).push(n.id)
   }
+  roots.sort()
+  for (const ids of Object.values(children)) ids.sort()
   return { children, roots, topology: { children, roots, layers } }
 }
 
@@ -164,7 +166,7 @@ export function mergeDiscovery(graph: TwinGraph, result: DiscoveryResult): Merge
     }
   }
   if (appended.length) {
-    dependencies = [...dependencies, ...appended]
+    dependencies = [...dependencies, ...appended].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     changed = true
   }
 
