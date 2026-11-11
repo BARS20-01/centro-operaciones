@@ -1,8 +1,9 @@
 import { Link, Outlet } from 'react-router-dom'
-import { Activity, Radar } from 'lucide-react'
+import { Radar } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmbientBackground } from '@/features/ambient/AmbientBackground'
 import { ThemeSwitcher } from '@/features/theme/ThemeSwitcher'
+import { WorkspaceSwitcher } from '@/workspaces/WorkspaceSwitcher'
 
 function Clock() {
   const [now, setNow] = useState(() => new Date())
@@ -17,7 +18,7 @@ export function AppLayout() {
   return (
     <div className="scanlines relative flex h-dvh flex-col overflow-hidden">
       <AmbientBackground />
-      <header className="relative z-10 flex items-center justify-between border-b border-neon/20 bg-void/60 px-4 py-1.5 backdrop-blur">
+      <header className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-neon/20 bg-void/60 px-4 py-1.5 backdrop-blur">
         <Link to="/" className="flex items-center gap-2">
           <Radar className="size-5 text-neon" />
           <div className="flex flex-col leading-tight">
@@ -28,20 +29,13 @@ export function AppLayout() {
           </div>
         </Link>
         <div className="flex items-center gap-2 text-xs sm:gap-4">
-          <Link
-            to="/diagnostics"
-            aria-label="System Diagnostics"
-            className="inline-flex items-center gap-1.5 rounded border border-neon/20 px-2 py-1 text-slate-300 hover:border-neon/50 hover:text-neon"
-          >
-            <Activity aria-hidden="true" className="size-3.5" />
-            <span className="hidden sm:inline">Diagnostics</span>
-          </Link>
+          <WorkspaceSwitcher />
           <ThemeSwitcher />
           <span className="hidden items-center gap-1 text-ok sm:flex">
             <span className="size-2 animate-pulse rounded-full bg-ok" style={{ boxShadow: '0 0 8px var(--theme-success)' }} />
             SISTEMA OPERATIVO
           </span>
-          <Clock />
+          <span className="hidden sm:inline"><Clock /></span>
         </div>
       </header>
       <main className="relative z-10 min-h-0 flex-1">

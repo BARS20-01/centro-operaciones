@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { AppLayout } from '@/layouts/AppLayout'
 
-const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+const WorkspaceView = lazy(() => import('@/workspaces/WorkspaceView'))
 const SystemDiagnosticsPage = lazy(() => import('@/pages/SystemDiagnosticsPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 
@@ -11,7 +11,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <AppLayout />,
     children: [
-      { index: true, element: <DashboardPage /> },
+      { index: true, element: <WorkspaceView /> },
       { path: 'diagnostics', element: <SystemDiagnosticsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

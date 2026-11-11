@@ -49,7 +49,22 @@ Los modos son presentaciones alternativas del mismo `TwinGraph`, el mismo inform
 | HOMELAB MODE | Árbol de hosting rotado para seguir el flujo físico de host a guest; oculta las aristas de dependencias para enfocar la infraestructura alojada. |
 | OPERATIONS MODE | Matriz priorizada por estado efectivo, con NEXUS HEALTH, Timeline, Mission Console e Impact Propagation. |
 
-AI Operations, Security Operations e Infrastructure Operations quedan como modos futuros deshabilitados, no como vistas funcionales.
+Estos View Modes son independientes del selector de Workspaces descrito abajo.
+
+## Workspace Engine
+
+El selector **Workspace** del encabezado cambia la perspectiva y guarda la selección en `localStorage` (`nexus-prime-workspace`). **Operations Center** es la opción inicial y mantiene la interfaz y fuentes existentes. Las vistas visitadas permanecen montadas al cambiar de workspace para preservar su estado durante la sesión; al recargar la página o salir de la ruta principal, el estado temporal se reinicia. System Diagnostics sigue disponible desde Operations Center y en `/diagnostics`.
+
+| Workspace | Alcance |
+|---|---|
+| Operations Center | Experiencia operacional existente y sus integraciones configuradas. |
+| Security Command | Visualización 3D y eventos, métricas e incidentes de ejemplo; acciones deshabilitadas. |
+| Digital Twin | Topología e indicadores de ejemplo, independientes del descubrimiento LIVE. |
+| AI Operations | Grafo 3D conceptual, interfaz y respuestas preescritas; no hay proveedor de IA conectado. |
+| Executive Overview | Indicadores ilustrativos para gestión. |
+| Homelab Mission Control | Puesto de misión con una flota, almacenamiento, respaldos y salud de ejemplo. |
+
+Las vistas de ejemplo se identifican como **SIMULATED · MOCK DATA** y no realizan consultas a proveedores. El mapa Digital Twin utiliza un trazado por fuerzas con relaciones simuladas seleccionables; Knowledge Core permite explorar relaciones ficticias. Las escenas 3D se cargan bajo demanda y utilizan alternativas estáticas con movimiento reducido o cuando WebGL no está disponible; se detienen al cambiar de workspace o al ocultar la página. El objetivo es una animación fluida, pero no se garantiza una tasa de 60 fps en todos los dispositivos. Los contratos en `src/workspaces/shared/ProviderAdapters.ts` son únicamente interfaces para integraciones futuras, no adaptadores operativos. No se han instalado ni configurado herramientas de seguridad o proveedores de IA.
 
 ## Theme Engine
 

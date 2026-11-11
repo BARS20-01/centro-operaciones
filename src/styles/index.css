@@ -35,6 +35,107 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.workspace-shell {
+  background: radial-gradient(ellipse at 50% 0%, #171636, #080d19 65%);
+  color: #cbd5e1;
+}
+
+.workspace-panel {
+  border: 1px solid rgba(103, 138, 190, 0.2);
+  background: rgba(12, 19, 34, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.workspace-security { background: radial-gradient(ellipse at 50% 20%, #211337, #060913 70%); }
+.workspace-twin { background: radial-gradient(ellipse at 50% 0%, #0c3036, #07151c 70%); }
+.workspace-ai { background: radial-gradient(ellipse at 50% 0%, #30214b, #101022 70%); }
+.workspace-executive { background: radial-gradient(ellipse at 50% 0%, #173349, #0c1724 70%); }
+.workspace-homelab { background: radial-gradient(ellipse at 50% 30%, #183244, #080e19 72%); }
+
+.workspace-command { color: #bce7ea; }
+.workspace-command-trigger { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border: 1px solid #4f9fa66b; border-radius: 6px; background: #0a1720e8; cursor: pointer; list-style: none; }
+.workspace-command-trigger::-webkit-details-marker { display: none; }
+.workspace-command-trigger:focus-visible, .workspace-command-option:focus-visible, .map-node-button:focus-visible { outline: 2px solid #67e8f9; outline-offset: 2px; }
+.workspace-command-label { display: grid; gap: 1px; min-width: 0; }
+.workspace-command-label small { font-size: 8px; letter-spacing: .16em; color: #69a6ae; }
+.workspace-command-label strong { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; text-transform: uppercase; }
+.workspace-command-chevron { transition: transform .2s; }
+.workspace-command[open] .workspace-command-chevron { transform: rotate(180deg); }
+.workspace-command-menu { position: absolute; z-index: 100; top: calc(100% + 8px); right: 0; width: min(300px, calc(100vw - 24px)); padding: 8px; border: 1px solid #41727c; border-radius: 8px; background: #07131cf5; box-shadow: 0 16px 50px #000b, 0 0 24px #31abc31a; animation: command-enter .18s ease-out; }
+.workspace-command-heading, .workspace-command-footer { display: flex; justify-content: space-between; padding: 9px; color: #73a4ac; font-size: 9px; letter-spacing: .13em; }
+.workspace-command-footer { border-top: 1px solid #23404a; font-size: 8px; }
+.workspace-command-option { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; color: #cbdde1; text-align: left; font-size: 11px; border-radius: 4px; cursor: pointer; }
+.workspace-command-option:hover, .workspace-command-option[aria-current] { background: #2a809336; color: #a4fff7; }
+.workspace-command-option svg { margin-left: auto; }
+.workspace-command-number { color: #5c99a3; font-size: 9px; }
+@keyframes command-enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+.workspace-security .workspace-panel { border-color: #7757c144; background: linear-gradient(135deg, #121227db, #090e1ddc); box-shadow: inset 0 1px #b68bff10; }
+.workspace-twin .workspace-panel { border-color: #4bc5ba33; background: #091b20d9; }
+.workspace-ai .workspace-panel { border-color: #b38afc38; background: #18132ad9; }
+.living-map { border: 1px solid #43b9ae33; background: radial-gradient(ellipse at center, #144d4d80, #061519 75%); }
+.living-map-header, .homelab-caption { display: flex; justify-content: space-between; gap: 8px; color: #7cb7b5; font-size: 9px; letter-spacing: .13em; padding: 12px; }
+.living-map-detail { display: grid; gap: 12px; border-top: 1px solid #31646660; padding: 12px; }
+.living-map-detail > div:first-child { display: grid; gap: 3px; }
+.living-map-detail span, .living-map-detail small { color: #82a8a9; font-size: 10px; }
+.living-map-detail strong { color: #cbfff4; font-size: 13px; }
+.map-node-button { border: 1px solid #658a9477; border-radius: 3px; padding: 5px 8px; color: #b9dbe1; font-size: 10px; cursor: pointer; }
+.map-node-button[aria-pressed="true"], .map-node-button:hover { border-color: #77f0e2; color: #d3fff8; background: #267c7840; }
+.homelab-deck { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+.homelab-console, .homelab-viewport { border: 1px solid #56859a55; background: #0a1924d9; box-shadow: inset 0 1px #9bddff14; }
+.homelab-system { display: flex; align-items: center; gap: 12px; padding: 20px 14px; border-top: 1px solid #31515f66; color: #7cc5d4; }
+.homelab-system div { display: grid; gap: 4px; flex: 1; }
+.homelab-system strong { color: #daeef3; font-size: 11px; }
+.homelab-system small { color: #78939b; font-size: 9px; }
+.homelab-system b { color: #9deee9; font-size: 13px; }
+.homelab-orbit { position: relative; display: grid; place-items: center; width: min(72%, 330px); aspect-ratio: 1; margin: 15px auto; border: 1px solid #4c9eac45; border-radius: 50%; background: radial-gradient(circle, #318b9d30, transparent 70%); }
+.homelab-orbit-ring { position: absolute; inset: 12%; border: 1px dashed #6bcad480; border-radius: 50%; animation: orbit-spin 24s linear infinite; }
+.homelab-orbit-ring.ring-two { inset: 24%; border-style: solid; border-color: #8bc7df45; animation-direction: reverse; animation-duration: 18s; }
+[inert] .homelab-orbit-ring { animation-play-state: paused; }
+.homelab-core { display: grid; place-items: center; gap: 8px; width: 28%; aspect-ratio: 1; border: 1px solid #89e0e5; border-radius: 50%; color: #9deee9; box-shadow: 0 0 35px #43bad94a; font-size: 9px; }
+.orbit-marker { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #90ffff; box-shadow: 0 0 12px #63e9fa; }
+.marker-one { top: 14%; left: 25%; } .marker-two { right: 13%; top: 49%; } .marker-three { bottom: 17%; left: 29%; }
+.homelab-legend, .homelab-ticker { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 10px; padding: 12px; color: #8eb3bd; font-size: 9px; letter-spacing: .1em; }
+.homelab-ticker { border: 1px solid #56859a55; background: #0a1924d9; }
+@keyframes orbit-spin { to { transform: rotate(360deg); } }
+@media (max-width: 639px) { .workspace-command-menu { left: 0; right: auto; } }
+@media (min-width: 1280px) { .homelab-deck { grid-template-columns: minmax(220px, 1fr) minmax(350px, 1.8fr) minmax(220px, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .workspace-command-menu, .homelab-orbit-ring { animation: none; } .workspace-command-chevron { transition: none; } }
+
+.static-threat-core {
+  position: absolute;
+  inset: 20% 30%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: 50%;
+}
+
+.static-threat-core div {
+  width: 55%;
+  aspect-ratio: 1;
+  border: 1px solid #67e8f9;
+  border-radius: 35%;
+  transform: rotate(45deg);
+  background: radial-gradient(circle, #6344b6, #182047);
+  box-shadow: 0 0 40px #6245ac80;
+}
+
+.topology-edge {
+  stroke: #4fcbe0;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 6;
+  animation: topology-flow 2s linear infinite;
+}
+
+@keyframes topology-flow {
+  to { stroke-dashoffset: -24; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topology-edge { animation: none; }
+}
+
 .bg-grid {
   background-image:
     linear-gradient(color-mix(in srgb, var(--theme-primary) 6%, transparent) 1px, transparent 1px),
